@@ -22,6 +22,8 @@ import logging
 import threading
 import time
 from dataclasses import dataclass, field
+
+import numpy as np
 from typing import Any, Callable
 
 import gi
@@ -132,6 +134,11 @@ class PipelineGroup:
             chain.append(trk)
         for st in self.plan["stages"]:
             if st["process_mode"] == 2:
+                if self.py_tracking and st["gie_unique_id"] in self.posture_gies:
+                    # python trackers give no object ids, so this model would run on every person every frame and
+                    # almost never be confident: use the box-shape posture estimate and save the GPU
+                    log.info("posture model skipped (shape estimate only) with a python tracker")
+                    continue
                 chain.append(infer(st))
         q = self._make("queue", "meta_queue", leaky=2, max_size_buffers=8)
         chain.append(q)
@@ -376,11 +383,11 @@ class PipelineGroup:
                         layer = pyds.get_nvds_LayerInfo(tm, 0)
                         n = int(layer.inferDims.d[0])
                         ptr = ctypes.cast(pyds.get_ptr(layer.buffer), ctypes.POINTER(ctypes.c_float))
-                        best, best_cls = 0.0, -1
-                        for k in range(n):
-                            sc = ptr[k * 6 + 4]
-                            if sc > best:
-                                best, best_cls = sc, int(ptr[k * 6 + 5])
+                        # one vectorised read of the [n, 6] tensor (a per-number python loop over 8400 boxes per
+                        # person per frame used to eat several CPU cores)
+                        arr = np.ctypeslib.as_array(ptr, shape=(n * 6,)).reshape(n, 6)
+                        k = int(arr[:, 4].argmax())
+                        best, best_cls = float(arr[k, 4]), int(arr[k, 5])
                         if 0 <= best_cls < len(labels) and best >= min_score:
                             label, score, source = labels[best_cls], float(best), "model"
                 l_user = l_user.next
