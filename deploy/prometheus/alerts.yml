@@ -1,0 +1,65 @@
+groups:
+  - name: vms
+    rules:
+      - alert: GpuOverload
+        expr: vms_gpu_utilization_pct > 90 or (vms_gpu_memory_used_mb / vms_gpu_memory_total_mb) > 0.92
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "GPU {{ $labels.gpu }} on {{ $labels.node }} overloaded"}
+      - alert: GpuDecoderSaturated
+        expr: vms_gpu_nvdec_utilization_pct > 90
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "NVDEC saturated on {{ $labels.node }}/{{ $labels.gpu }}"}
+      - alert: GpuHot
+        expr: vms_gpu_temperature_c > 85
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: "GPU temperature {{ $value }}C"}
+      - alert: WorkerCrash
+        expr: increase(vms_worker_failures_total[5m]) > 0 or increase(vms_worker_process_restarts_total[5m]) > 0
+        labels: {severity: critical}
+        annotations: {summary: "DeepStream worker failure detected"}
+      - alert: RtspDisconnected
+        expr: vms_cameras{status="RECONNECTING"} > 0
+        for: 2m
+        labels: {severity: warning}
+        annotations: {summary: "{{ $value }} camera(s) reconnecting for >2m"}
+      - alert: CamerasFailed
+        expr: vms_cameras{status="FAILED"} > 0
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "{{ $value }} camera(s) FAILED"}
+      - alert: CamerasWaitingForCapacity
+        expr: vms_cameras{status="PENDING_CAPACITY"} > 0
+        for: 15m
+        labels: {severity: info}
+        annotations: {summary: "{{ $value }} camera(s) queued for GPU capacity"}
+      - alert: KafkaBacklog
+        expr: sum by (consumergroup, topic) (kafka_consumergroup_lag) > 50000
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "Kafka lag {{ $value }} for {{ $labels.consumergroup }}/{{ $labels.topic }}"}
+      - alert: ModelLoadFailure
+        expr: increase(vms_model_load_failures_total[10m]) > 0
+        labels: {severity: critical}
+        annotations: {summary: "Model {{ $labels.model }} failed to load"}
+      - alert: LowProcessingFps
+        expr: (vms_camera_processing_fps / vms_camera_input_fps) < 0.8 and vms_camera_input_fps > 0
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "Camera {{ $labels.camera }} processing below 80% of input FPS (dropped frames)"}
+      - alert: HighPipelineLatency
+        expr: vms_pipeline_latency_ms > 500
+        for: 5m
+        labels: {severity: warning}
+        annotations: {summary: "Camera {{ $labels.camera }} latency {{ $value }}ms"}
+      - alert: EventsDropped
+        expr: increase(vms_events_dropped_total[5m]) > 1000
+        labels: {severity: warning}
+        annotations: {summary: "Detection events dropped by backpressure"}
+      - alert: SchedulerNoLeader
+        expr: max(vms_scheduler_leader) < 1
+        for: 2m
+        labels: {severity: critical}
+        annotations: {summary: "No active scheduler"}

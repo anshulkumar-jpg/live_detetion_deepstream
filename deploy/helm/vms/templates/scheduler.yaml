@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-scheduler
+  labels: {{- include "vms.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.scheduler.replicas }}
+  selector: {matchLabels: {app: {{ .Release.Name }}-scheduler}}
+  template:
+    metadata:
+      labels: {app: {{ .Release.Name }}-scheduler}
+      annotations: {prometheus.io/scrape: "true", prometheus.io/port: "9101"}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: scheduler
+          image: "{{ .Values.image.api.repository }}:{{ .Values.image.api.tag }}"
+          command: ["python", "-m", "app.scheduler_main"]
+          ports: [{name: metrics, containerPort: 9101}]
+          {{- include "vms.env" . | nindent 10 }}
+          livenessProbe: {tcpSocket: {port: metrics}, periodSeconds: 15}
+          resources: {{- toYaml .Values.scheduler.resources | nindent 12 }}
+          {{- include "vms.securityContext" . | nindent 10 }}

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: vms
+description: DeepStream multi-camera analytics backend (control plane, GPU agents, analytics, MediaMTX)
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

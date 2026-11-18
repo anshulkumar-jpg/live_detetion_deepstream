@@ -1,0 +1,17 @@
+{{- if .Values.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: {{ .Release.Name }}
+  labels: {{- include "vms.labels" . | nindent 4 }}
+spec:
+  selector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values:
+          {{- range list "api" "scheduler" "gpu-agent" "analytics-stream" "mtmc" }}
+          - {{ printf "%s-%s" $.Release.Name . }}
+          {{- end }}
+  podMetricsEndpoints: [{port: http}, {port: metrics}]
+{{- end }}

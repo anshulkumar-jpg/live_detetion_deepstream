@@ -1,0 +1,47 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-analytics-stream
+  labels: {{- include "vms.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.analyticsStream.replicas }}
+  selector: {matchLabels: {app: {{ .Release.Name }}-analytics-stream}}
+  template:
+    metadata:
+      labels: {app: {{ .Release.Name }}-analytics-stream}
+      annotations: {prometheus.io/scrape: "true", prometheus.io/port: "9103"}
+    spec:
+      containers:
+        - name: analytics-stream
+          image: "{{ .Values.image.api.repository }}:{{ .Values.image.api.tag }}"
+          command: ["python", "-m", "analytics.stream"]
+          ports: [{name: metrics, containerPort: 9103}]
+          {{- include "vms.env" . | nindent 10 }}
+          livenessProbe: {tcpSocket: {port: metrics}, periodSeconds: 20}
+          resources: {{- toYaml .Values.analyticsStream.resources | nindent 12 }}
+          {{- include "vms.securityContext" . | nindent 10 }}
+{{- if .Values.mtmc.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-mtmc
+  labels: {{- include "vms.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.mtmc.replicas }}
+  selector: {matchLabels: {app: {{ .Release.Name }}-mtmc}}
+  template:
+    metadata:
+      labels: {app: {{ .Release.Name }}-mtmc}
+      annotations: {prometheus.io/scrape: "true", prometheus.io/port: "9104"}
+    spec:
+      containers:
+        - name: mtmc
+          image: "{{ .Values.image.api.repository }}:{{ .Values.image.api.tag }}"
+          command: ["python", "-m", "analytics.mtmc"]
+          ports: [{name: metrics, containerPort: 9104}]
+          {{- include "vms.env" . | nindent 10 }}
+          livenessProbe: {tcpSocket: {port: metrics}, periodSeconds: 20}
+          resources: {{- toYaml .Values.mtmc.resources | nindent 12 }}
+          {{- include "vms.securityContext" . | nindent 10 }}
+{{- end }}

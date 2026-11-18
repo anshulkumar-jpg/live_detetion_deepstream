@@ -1,0 +1,11 @@
+# helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+# helm install monitoring prometheus-community/kube-prometheus-stack -f kube-prometheus-stack-values.yaml -n monitoring --create-namespace
+# Then: kubectl -n monitoring create configmap vms-dashboards --from-file=../../grafana/dashboards/ && kubectl -n monitoring label cm vms-dashboards grafana_dashboard=1
+#       convert ../../prometheus/alerts.yml into a PrometheusRule (spec.groups = the file's groups)
+prometheus:
+  prometheusSpec:
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+grafana:
+  sidecar:
+    dashboards: {enabled: true, label: grafana_dashboard}

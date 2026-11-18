@@ -1,0 +1,14 @@
+# DeepStream worker + node agent (runs inside the NVIDIA DeepStream container, Python 3.12).
+# pyds (DeepStream Python bindings) and PyGObject come from the image / Dockerfile, not pip.
+pydantic>=2.7,<3
+pydantic-settings>=2.3,<3
+PyJWT>=2.8,<3
+cryptography>=42
+confluent-kafka>=2.4,<3
+prometheus-client>=0.20
+nvidia-ml-py>=12.535
+numpy>=1.24,<2.3
+# used by scripts/validate_gpu_node.py and scripts/benchmark.py (plan generation + API calls)
+SQLAlchemy>=2.0,<2.2
+PyYAML>=6
+httpx>=0.27

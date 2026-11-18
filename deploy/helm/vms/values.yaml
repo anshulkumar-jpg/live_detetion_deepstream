@@ -1,0 +1,62 @@
+image:
+  api: {repository: registry.example.com/vms-api, tag: "1.0.0", pullPolicy: IfNotPresent}
+  worker: {repository: registry.example.com/vms-worker, tag: "1.0.0", pullPolicy: IfNotPresent}
+imagePullSecrets: []
+
+# Secret with keys: DATABASE_URL, JWT_SECRET, CREDENTIAL_ENCRYPTION_KEY, INTERNAL_SERVICE_TOKEN,
+# BOOTSTRAP_ADMIN_PASSWORD (+ KAFKA_SASL_PASSWORD, MILVUS_TOKEN if used). Create it out-of-band
+# (sealed-secrets / external-secrets / kubectl). The chart never stores secrets in values.
+existingSecret: vms-secrets
+
+config:
+  ENVIRONMENT: production
+  LOG_LEVEL: INFO
+  KAFKA_BOOTSTRAP_SERVERS: vms-kafka-kafka-bootstrap:9092
+  KAFKA_SECURITY_PROTOCOL: PLAINTEXT
+  KAFKA_DEFAULT_PARTITIONS: "24"
+  KAFKA_REPLICATION_FACTOR: "3"
+  CAMERAS_PER_WORKER: "2"
+  DEFAULT_MAX_STREAMS_PER_GPU: "8"
+  MEDIAMTX_API_URL: http://vms-mediamtx:9997
+  MEDIAMTX_RTSP_PUSH_URL: rtsp://vms-mediamtx:8554
+  MEDIAMTX_PUBLIC_HLS_URL: https://vms.example.com/hls
+  MEDIAMTX_PUBLIC_WEBRTC_URL: https://vms.example.com/webrtc
+  MEDIAMTX_PUBLIC_RTSP_URL: rtsp://vms.example.com:8554
+  MILVUS_URI: http://vms-milvus:19530
+  EMBEDDING_DIM: "256"
+
+api:
+  replicas: 2
+  resources: {requests: {cpu: 250m, memory: 512Mi}, limits: {cpu: "2", memory: 1Gi}}
+
+scheduler:
+  replicas: 2          # one active leader (PostgreSQL advisory lock), one hot standby
+  resources: {requests: {cpu: 250m, memory: 512Mi}, limits: {cpu: "2", memory: 1Gi}}
+
+gpuAgent:
+  # One agent per GPU node (DaemonSet). It runs logical workers as processes, NOT one pod per
+  # 2 cameras: hundreds of pods would only add overhead - the GPU is the bottleneck.
+  nodeSelector: {nvidia.com/gpu.present: "true"}
+  gpusPerNode: 1
+  runtimeClassName: ""   # e.g. "nvidia" if the GPU Operator is configured that way
+  tolerations: [{key: nvidia.com/gpu, operator: Exists, effect: NoSchedule}]
+  resources: {requests: {cpu: "4", memory: 8Gi}, limits: {cpu: "16", memory: 32Gi}}
+  modelsPVC: vms-models   # ReadWriteMany (or per-node) volume with ONNX/engines/labels
+  terminationGracePeriodSeconds: 45
+
+analyticsStream:
+  replicas: 1
+  resources: {requests: {cpu: 250m, memory: 512Mi}, limits: {cpu: "2", memory: 2Gi}}
+
+mtmc:
+  enabled: true
+  replicas: 1
+  resources: {requests: {cpu: 500m, memory: 1Gi}, limits: {cpu: "4", memory: 4Gi}}
+
+mediamtx:
+  image: bluenviron/mediamtx:1.9.3
+  resources: {requests: {cpu: 500m, memory: 512Mi}, limits: {cpu: "4", memory: 4Gi}}
+  service: {type: LoadBalancer}
+
+serviceMonitor:
+  enabled: false   # requires prometheus-operator CRDs (kube-prometheus-stack)

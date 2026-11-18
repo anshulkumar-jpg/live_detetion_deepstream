@@ -1,0 +1,35 @@
+# GPU node agent + DeepStream workers.
+# Base: NVIDIA DeepStream container from NGC (requires NVIDIA Container Toolkit on the host).
+# Check https://catalog.ngc.nvidia.com/orgs/nvidia/containers/deepstream for current tags and
+# https://github.com/NVIDIA-AI-IOT/deepstream_python_apps/releases for the matching pyds wheel.
+# DeepStream 8.0 (Ubuntu 24.04, CUDA 12.8, Python 3.12) is required for Blackwell GPUs (RTX 50xx, sm_120).
+ARG DS_IMAGE=nvcr.io/nvidia/deepstream:8.0-triton-multiarch
+FROM ${DS_IMAGE}
+ARG PYDS_WHEEL_URL=https://github.com/NVIDIA-AI-IOT/deepstream_python_apps/releases/download/v1.2.2/pyds-1.2.2-cp312-cp312-linux_x86_64.whl
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 PIP_NO_CACHE_DIR=1 \
+    DEEPSTREAM_CONFIG_DIR=/opt/vms/generated MODEL_REPOSITORY_DIR=/models
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        python3-pip python3-gi python3-gst-1.0 gstreamer1.0-rtsp gstreamer1.0-plugins-bad \
+    && rm -rf /var/lib/apt/lists/* \
+    && (/opt/nvidia/deepstream/deepstream/user_additional_install.sh || true)
+WORKDIR /opt/vms
+COPY requirements-worker.txt .
+ENV PIP_BREAK_SYSTEM_PACKAGES=1
+# --ignore-installed: the image ships Debian-packaged cryptography/PyJWT that pip cannot uninstall (no RECORD file)
+RUN pip3 install --ignore-installed -r requirements-worker.txt && pip3 install "${PYDS_WHEEL_URL}"
+
+# YOLO bbox parser for nvinfer (expects output [B, N, 6] = x1,y1,x2,y2,score,class; see scripts/onnx_add_yolo_decode.py).
+# Built from the open-source marcoslucianops/DeepStream-Yolo repo.
+ARG CUDA_VER=12.8
+RUN git clone --depth 1 https://github.com/marcoslucianops/DeepStream-Yolo /tmp/dsyolo \
+    && CUDA_VER=${CUDA_VER} make -C /tmp/dsyolo/nvdsinfer_custom_impl_Yolo \
+    && mkdir -p /opt/vms/lib \
+    && cp /tmp/dsyolo/nvdsinfer_custom_impl_Yolo/libnvdsinfer_custom_impl_Yolo.so /opt/vms/lib/ \
+    && rm -rf /tmp/dsyolo
+COPY app ./app
+COPY worker ./worker
+COPY scripts ./scripts
+COPY config ./config
+RUN mkdir -p /opt/vms/generated
+EXPOSE 9102
+CMD ["python3", "-m", "worker.agent"]

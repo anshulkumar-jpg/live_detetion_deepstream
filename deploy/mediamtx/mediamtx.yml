@@ -1,0 +1,46 @@
+# MediaMTX - video streaming plane (processed + raw camera streams -> HLS / WebRTC / RTSP)
+logLevel: info
+
+api: yes
+apiAddress: :9997
+metrics: yes
+metricsAddress: :9998
+
+# Every read/publish/api request is authorised by the platform API
+# (see app/api/v1/internal.py): viewers need a platform JWT, publishers need
+# the internal service token and a private source IP.
+authMethod: http
+authHTTPAddress: http://api:8000/internal/mediamtx/auth
+
+rtsp: yes
+rtspAddress: :8554
+protocols: [tcp]
+
+rtmp: yes
+rtmpAddress: :1935
+
+hls: yes
+hlsAddress: :8888
+hlsVariant: lowLatency
+hlsSegmentCount: 7
+hlsSegmentDuration: 1s
+hlsPartDuration: 200ms
+
+webrtc: yes
+webrtcAddress: :8889
+# Host IPs that browsers can reach (Docker Desktop: the container IP is not reachable from the host)
+webrtcAdditionalHosts: [127.0.0.1, localhost, 192.168.1.36]
+webrtcLocalUDPAddress: :8189
+webrtcLocalTCPAddress: :8189   # TCP fallback when UDP is blocked
+
+srt: no
+
+pathDefaults:
+  # stop pulling a raw camera when nobody is watching
+  sourceOnDemandCloseAfter: 15s
+
+paths:
+  # Annotated output pushed by DeepStream workers (NVENC H.264)
+  "~^cam/[A-Za-z0-9_.-]+/processed$":
+    source: publisher
+  # cam/<id>/raw paths are created at runtime through the Control API (sourceOnDemand pull)

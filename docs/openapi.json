@@ -1,0 +1,3119 @@
+{
+ "openapi": "3.1.0",
+ "info": {
+  "title": "DeepStream VMS Backend",
+  "description": "Control-plane API for the DeepStream multi-camera analytics platform. Authenticate with POST /api/v1/auth/token and send `Authorization: Bearer <token>`.",
+  "version": "1.0.0"
+ },
+ "paths": {
+  "/api/v1/auth/token": {
+   "post": {
+    "tags": [
+     "auth"
+    ],
+    "summary": "Token",
+    "operationId": "token_api_v1_auth_token_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/TokenRequest"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TokenResponse"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/auth/users": {
+   "post": {
+    "tags": [
+     "auth"
+    ],
+    "summary": "Create User",
+    "operationId": "create_user_api_v1_auth_users_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/UserCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ]
+   }
+  },
+  "/api/v1/cameras": {
+   "post": {
+    "tags": [
+     "cameras"
+    ],
+    "summary": "Create Camera",
+    "operationId": "create_camera_api_v1_cameras_post",
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CameraCreate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CameraOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "get": {
+    "tags": [
+     "cameras"
+    ],
+    "summary": "List Cameras",
+    "operationId": "list_cameras_api_v1_cameras_get",
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "status",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "$ref": "#/components/schemas/CameraStatus"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Status"
+      }
+     },
+     {
+      "name": "desired_state",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "$ref": "#/components/schemas/DesiredState"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Desired State"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 1000,
+       "minimum": 1,
+       "default": 100,
+       "title": "Limit"
+      }
+     },
+     {
+      "name": "offset",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "minimum": 0,
+       "default": 0,
+       "title": "Offset"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Page"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/cameras/bulk": {
+   "post": {
+    "tags": [
+     "cameras"
+    ],
+    "summary": "Bulk Create",
+    "operationId": "bulk_create_api_v1_cameras_bulk_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CameraBulkCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ]
+   }
+  },
+  "/api/v1/cameras/{camera_id}": {
+   "get": {
+    "tags": [
+     "cameras"
+    ],
+    "summary": "Get Camera",
+    "operationId": "get_camera_api_v1_cameras__camera_id__get",
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "camera_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Camera Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CameraOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "cameras"
+    ],
+    "summary": "Update Camera",
+    "operationId": "update_camera_api_v1_cameras__camera_id__put",
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "camera_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Camera Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CameraUpdate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CameraOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "tags": [
+     "cameras"
+    ],
+    "summary": "Delete Camera",
+    "operationId": "delete_camera_api_v1_cameras__camera_id__delete",
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "camera_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Camera Id"
+      }
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/cameras/{camera_id}/start": {
+   "post": {
+    "tags": [
+     "cameras"
+    ],
+    "summary": "Start Camera",
+    "operationId": "start_camera_api_v1_cameras__camera_id__start_post",
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "camera_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Camera Id"
+      }
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CameraOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/cameras/{camera_id}/stop": {
+   "post": {
+    "tags": [
+     "cameras"
+    ],
+    "summary": "Stop Camera",
+    "operationId": "stop_camera_api_v1_cameras__camera_id__stop_post",
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "camera_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Camera Id"
+      }
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CameraOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/cameras/{camera_id}/models": {
+   "post": {
+    "tags": [
+     "cameras"
+    ],
+    "summary": "Assign Models",
+    "description": "Replace the camera's model assignments. Only this camera's pipeline is rebuilt;\nother cameras (including the one sharing its worker) keep running.",
+    "operationId": "assign_models_api_v1_cameras__camera_id__models_post",
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "camera_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Camera Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CameraModelsRequest"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CameraOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/cameras/{camera_id}/stream": {
+   "get": {
+    "tags": [
+     "cameras"
+    ],
+    "summary": "Camera Stream",
+    "operationId": "camera_stream_api_v1_cameras__camera_id__stream_get",
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "camera_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Camera Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/cameras/{camera_id}/stream/status": {
+   "get": {
+    "tags": [
+     "cameras"
+    ],
+    "summary": "Camera Stream Status",
+    "operationId": "camera_stream_status_api_v1_cameras__camera_id__stream_status_get",
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "camera_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Camera Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/models": {
+   "get": {
+    "tags": [
+     "models"
+    ],
+    "summary": "List Models",
+    "operationId": "list_models_api_v1_models_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "items": {
+          "$ref": "#/components/schemas/ModelOut"
+         },
+         "type": "array",
+         "title": "Response List Models Api V1 Models Get"
+        }
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ]
+   },
+   "post": {
+    "tags": [
+     "models"
+    ],
+    "summary": "Create Model",
+    "operationId": "create_model_api_v1_models_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ModelCreate"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ModelOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ]
+   }
+  },
+  "/api/v1/models/{model_id}": {
+   "get": {
+    "tags": [
+     "models"
+    ],
+    "summary": "Get Model",
+    "operationId": "get_model_api_v1_models__model_id__get",
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "model_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Model Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ModelOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "tags": [
+     "models"
+    ],
+    "summary": "Update Model",
+    "description": "Update metadata, enable/disable, register a new version, or activate/roll back\nto an existing version. Only cameras using this model get their pipelines rebuilt.",
+    "operationId": "update_model_api_v1_models__model_id__put",
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "model_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Model Id"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/ModelUpdate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/ModelOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/workers": {
+   "get": {
+    "tags": [
+     "workers"
+    ],
+    "summary": "List Workers",
+    "operationId": "list_workers_api_v1_workers_get",
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "state",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "$ref": "#/components/schemas/WorkerState"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "State"
+      }
+     },
+     {
+      "name": "include_stopped",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "boolean",
+       "default": false,
+       "title": "Include Stopped"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 2000,
+       "minimum": 1,
+       "default": 500,
+       "title": "Limit"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "array",
+         "items": {
+          "$ref": "#/components/schemas/WorkerOut"
+         },
+         "title": "Response List Workers Api V1 Workers Get"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/workers/{worker_id}": {
+   "get": {
+    "tags": [
+     "workers"
+    ],
+    "summary": "Get Worker",
+    "operationId": "get_worker_api_v1_workers__worker_id__get",
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "worker_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Worker Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/WorkerOut"
+        }
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/workers/{worker_id}/metrics": {
+   "get": {
+    "tags": [
+     "workers"
+    ],
+    "summary": "Worker Metrics",
+    "operationId": "worker_metrics_api_v1_workers__worker_id__metrics_get",
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "worker_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Worker Id"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/workers/{worker_id}/restart": {
+   "post": {
+    "tags": [
+     "workers"
+    ],
+    "summary": "Restart Worker",
+    "operationId": "restart_worker_api_v1_workers__worker_id__restart_post",
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "worker_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Worker Id"
+      }
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/workers/{worker_id}/stop": {
+   "post": {
+    "tags": [
+     "workers"
+    ],
+    "summary": "Stop Worker",
+    "operationId": "stop_worker_api_v1_workers__worker_id__stop_post",
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "worker_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Worker Id"
+      }
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/gpu/status": {
+   "get": {
+    "tags": [
+     "gpu"
+    ],
+    "summary": "Gpu Status",
+    "operationId": "gpu_status_api_v1_gpu_status_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ]
+   }
+  },
+  "/api/v1/gpu/metrics": {
+   "get": {
+    "tags": [
+     "gpu"
+    ],
+    "summary": "Gpu Metrics",
+    "operationId": "gpu_metrics_api_v1_gpu_metrics_get",
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "minutes",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 1440,
+       "minimum": 1,
+       "default": 15,
+       "title": "Minutes"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/gpu/resources": {
+   "get": {
+    "tags": [
+     "gpu"
+    ],
+    "summary": "Gpu Resources",
+    "description": "Capacity view: streams per GPU, pending cameras, and the live admission decision.",
+    "operationId": "gpu_resources_api_v1_gpu_resources_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ]
+   }
+  },
+  "/api/v1/gpu/capacity-profiles": {
+   "post": {
+    "tags": [
+     "gpu"
+    ],
+    "summary": "Add Capacity Profile",
+    "description": "Record benchmark-measured capacity (scripts/benchmark.py posts here).",
+    "operationId": "add_capacity_profile_api_v1_gpu_capacity_profiles_post",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/CapacityProfileIn"
+       }
+      }
+     },
+     "required": true
+    },
+    "responses": {
+     "201": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    },
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ]
+   }
+  },
+  "/api/v1/events": {
+   "get": {
+    "tags": [
+     "analytics"
+    ],
+    "summary": "List Events",
+    "operationId": "list_events_api_v1_events_get",
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "camera_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Camera Id"
+      }
+     },
+     {
+      "name": "class_name",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Class Name"
+      }
+     },
+     {
+      "name": "model_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Model Id"
+      }
+     },
+     {
+      "name": "since",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string",
+         "format": "date-time"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Since"
+      }
+     },
+     {
+      "name": "until",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "anyOf": [
+        {
+         "type": "string",
+         "format": "date-time"
+        },
+        {
+         "type": "null"
+        }
+       ],
+       "title": "Until"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 1000,
+       "minimum": 1,
+       "default": 100,
+       "title": "Limit"
+      }
+     },
+     {
+      "name": "offset",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "minimum": 0,
+       "default": 0,
+       "title": "Offset"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/analytics/summary": {
+   "get": {
+    "tags": [
+     "analytics"
+    ],
+    "summary": "Summary",
+    "operationId": "summary_api_v1_analytics_summary_get",
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "hours",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 720,
+       "minimum": 1,
+       "default": 24,
+       "title": "Hours"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/api/v1/analytics/cameras/{camera_id}": {
+   "get": {
+    "tags": [
+     "analytics"
+    ],
+    "summary": "Camera Analytics",
+    "operationId": "camera_analytics_api_v1_analytics_cameras__camera_id__get",
+    "security": [
+     {
+      "HTTPBearer": []
+     }
+    ],
+    "parameters": [
+     {
+      "name": "camera_id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "title": "Camera Id"
+      }
+     },
+     {
+      "name": "hours",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer",
+       "maximum": 720,
+       "minimum": 1,
+       "default": 24,
+       "title": "Hours"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     },
+     "422": {
+      "description": "Validation Error",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/HTTPValidationError"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/health": {
+   "get": {
+    "tags": [
+     "system"
+    ],
+    "summary": "Health",
+    "operationId": "health_health_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/ready": {
+   "get": {
+    "tags": [
+     "system"
+    ],
+    "summary": "Ready",
+    "operationId": "ready_ready_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  },
+  "/metrics": {
+   "get": {
+    "tags": [
+     "system"
+    ],
+    "summary": "Metrics",
+    "operationId": "metrics_metrics_get",
+    "responses": {
+     "200": {
+      "description": "Successful Response",
+      "content": {
+       "application/json": {
+        "schema": {}
+       }
+      }
+     }
+    }
+   }
+  }
+ },
+ "components": {
+  "schemas": {
+   "CameraBulkCreate": {
+    "properties": {
+     "cameras": {
+      "items": {
+       "$ref": "#/components/schemas/CameraCreate"
+      },
+      "type": "array",
+      "maxItems": 1000,
+      "minItems": 1,
+      "title": "Cameras"
+     }
+    },
+    "type": "object",
+    "required": [
+     "cameras"
+    ],
+    "title": "CameraBulkCreate"
+   },
+   "CameraCreate": {
+    "properties": {
+     "name": {
+      "type": "string",
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Name"
+     },
+     "location": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Location"
+     },
+     "tags": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Tags"
+     },
+     "width": {
+      "anyOf": [
+       {
+        "type": "integer",
+        "maximum": 8192.0,
+        "minimum": 16.0
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Width"
+     },
+     "height": {
+      "anyOf": [
+       {
+        "type": "integer",
+        "maximum": 8192.0,
+        "minimum": 16.0
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Height"
+     },
+     "fps": {
+      "type": "integer",
+      "maximum": 120.0,
+      "minimum": 1.0,
+      "title": "Fps",
+      "default": 30
+     },
+     "codec_hint": {
+      "anyOf": [
+       {
+        "type": "string",
+        "enum": [
+         "h264",
+         "h265",
+         "mjpeg"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Codec Hint"
+     },
+     "tracking_enabled": {
+      "type": "boolean",
+      "title": "Tracking Enabled",
+      "default": true
+     },
+     "tracker_type": {
+      "type": "string",
+      "enum": [
+       "NvDCF",
+       "NvSORT",
+       "IOU",
+       "NvDeepSORT"
+      ],
+      "title": "Tracker Type",
+      "default": "NvDCF"
+     },
+     "execution_strategy": {
+      "$ref": "#/components/schemas/ExecutionStrategy",
+      "default": "independent"
+     },
+     "stream_mode": {
+      "$ref": "#/components/schemas/StreamMode",
+      "default": "none"
+     },
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "rtsp_url": {
+      "type": "string",
+      "title": "Rtsp Url"
+     },
+     "username": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 255
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Username"
+     },
+     "password": {
+      "anyOf": [
+       {
+        "type": "string",
+        "maxLength": 255
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Password"
+     }
+    },
+    "type": "object",
+    "required": [
+     "name",
+     "id",
+     "rtsp_url"
+    ],
+    "title": "CameraCreate"
+   },
+   "CameraModelItem": {
+    "properties": {
+     "model_id": {
+      "type": "string",
+      "title": "Model Id"
+     },
+     "enabled": {
+      "type": "boolean",
+      "title": "Enabled",
+      "default": true
+     },
+     "parent_model_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Parent Model Id"
+     },
+     "operate_on_class_ids": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "integer"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Operate On Class Ids"
+     }
+    },
+    "type": "object",
+    "required": [
+     "model_id"
+    ],
+    "title": "CameraModelItem"
+   },
+   "CameraModelsRequest": {
+    "properties": {
+     "models": {
+      "items": {
+       "$ref": "#/components/schemas/CameraModelItem"
+      },
+      "type": "array",
+      "maxItems": 16,
+      "minItems": 1,
+      "title": "Models"
+     },
+     "tracking_enabled": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Tracking Enabled"
+     },
+     "tracker_type": {
+      "anyOf": [
+       {
+        "type": "string",
+        "enum": [
+         "NvDCF",
+         "NvSORT",
+         "IOU",
+         "NvDeepSORT"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Tracker Type"
+     },
+     "execution_strategy": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/ExecutionStrategy"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "type": "object",
+    "required": [
+     "models"
+    ],
+    "title": "CameraModelsRequest"
+   },
+   "CameraOut": {
+    "properties": {
+     "name": {
+      "type": "string",
+      "maxLength": 255,
+      "minLength": 1,
+      "title": "Name"
+     },
+     "location": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Location"
+     },
+     "tags": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Tags"
+     },
+     "width": {
+      "anyOf": [
+       {
+        "type": "integer",
+        "maximum": 8192.0,
+        "minimum": 16.0
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Width"
+     },
+     "height": {
+      "anyOf": [
+       {
+        "type": "integer",
+        "maximum": 8192.0,
+        "minimum": 16.0
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Height"
+     },
+     "fps": {
+      "type": "integer",
+      "maximum": 120.0,
+      "minimum": 1.0,
+      "title": "Fps",
+      "default": 30
+     },
+     "codec_hint": {
+      "anyOf": [
+       {
+        "type": "string",
+        "enum": [
+         "h264",
+         "h265",
+         "mjpeg"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Codec Hint"
+     },
+     "tracking_enabled": {
+      "type": "boolean",
+      "title": "Tracking Enabled",
+      "default": true
+     },
+     "tracker_type": {
+      "type": "string",
+      "enum": [
+       "NvDCF",
+       "NvSORT",
+       "IOU",
+       "NvDeepSORT"
+      ],
+      "title": "Tracker Type",
+      "default": "NvDCF"
+     },
+     "execution_strategy": {
+      "$ref": "#/components/schemas/ExecutionStrategy",
+      "default": "independent"
+     },
+     "stream_mode": {
+      "$ref": "#/components/schemas/StreamMode",
+      "default": "none"
+     },
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "rtsp_url": {
+      "type": "string",
+      "title": "Rtsp Url"
+     },
+     "has_credentials": {
+      "type": "boolean",
+      "title": "Has Credentials"
+     },
+     "desired_state": {
+      "$ref": "#/components/schemas/DesiredState"
+     },
+     "status": {
+      "$ref": "#/components/schemas/CameraStatus"
+     },
+     "status_reason": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Status Reason"
+     },
+     "config_generation": {
+      "type": "integer",
+      "title": "Config Generation"
+     },
+     "worker_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Worker Id"
+     },
+     "models": {
+      "items": {
+       "$ref": "#/components/schemas/ModelAssignmentOut"
+      },
+      "type": "array",
+      "title": "Models"
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Created At"
+     },
+     "updated_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Updated At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "name",
+     "id",
+     "rtsp_url",
+     "has_credentials",
+     "desired_state",
+     "status",
+     "status_reason",
+     "config_generation",
+     "created_at",
+     "updated_at"
+    ],
+    "title": "CameraOut"
+   },
+   "CameraStatus": {
+    "type": "string",
+    "enum": [
+     "REGISTERED",
+     "PENDING_CAPACITY",
+     "SCHEDULED",
+     "STARTING",
+     "RUNNING",
+     "RECONNECTING",
+     "STOPPING",
+     "STOPPED",
+     "FAILED"
+    ],
+    "title": "CameraStatus"
+   },
+   "CameraUpdate": {
+    "properties": {
+     "name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Name"
+     },
+     "location": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Location"
+     },
+     "tags": {
+      "anyOf": [
+       {
+        "additionalProperties": true,
+        "type": "object"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Tags"
+     },
+     "rtsp_url": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Rtsp Url"
+     },
+     "username": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Username"
+     },
+     "password": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Password"
+     },
+     "width": {
+      "anyOf": [
+       {
+        "type": "integer",
+        "maximum": 8192.0,
+        "minimum": 16.0
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Width"
+     },
+     "height": {
+      "anyOf": [
+       {
+        "type": "integer",
+        "maximum": 8192.0,
+        "minimum": 16.0
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Height"
+     },
+     "fps": {
+      "anyOf": [
+       {
+        "type": "integer",
+        "maximum": 120.0,
+        "minimum": 1.0
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Fps"
+     },
+     "codec_hint": {
+      "anyOf": [
+       {
+        "type": "string",
+        "enum": [
+         "h264",
+         "h265",
+         "mjpeg"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Codec Hint"
+     },
+     "tracking_enabled": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Tracking Enabled"
+     },
+     "tracker_type": {
+      "anyOf": [
+       {
+        "type": "string",
+        "enum": [
+         "NvDCF",
+         "NvSORT",
+         "IOU",
+         "NvDeepSORT"
+        ]
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Tracker Type"
+     },
+     "execution_strategy": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/ExecutionStrategy"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "stream_mode": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/StreamMode"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "type": "object",
+    "title": "CameraUpdate"
+   },
+   "CapacityProfileIn": {
+    "properties": {
+     "gpu_name": {
+      "type": "string",
+      "title": "Gpu Name"
+     },
+     "pipeline_signature": {
+      "type": "string",
+      "title": "Pipeline Signature"
+     },
+     "model_set": {
+      "items": {},
+      "type": "array",
+      "title": "Model Set"
+     },
+     "input_resolution": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Input Resolution"
+     },
+     "input_fps": {
+      "type": "integer",
+      "title": "Input Fps",
+      "default": 30
+     },
+     "max_streams": {
+      "type": "integer",
+      "minimum": 1.0,
+      "title": "Max Streams"
+     },
+     "memory_mb_per_stream": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Memory Mb Per Stream"
+     },
+     "avg_fps_per_stream": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Avg Fps Per Stream"
+     },
+     "p95_latency_ms": {
+      "anyOf": [
+       {
+        "type": "number"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "P95 Latency Ms"
+     },
+     "notes": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Notes"
+     }
+    },
+    "type": "object",
+    "required": [
+     "gpu_name",
+     "pipeline_signature",
+     "max_streams"
+    ],
+    "title": "CapacityProfileIn"
+   },
+   "DesiredState": {
+    "type": "string",
+    "enum": [
+     "RUNNING",
+     "STOPPED"
+    ],
+    "title": "DesiredState"
+   },
+   "ExecutionStrategy": {
+    "type": "string",
+    "enum": [
+     "independent",
+     "cascade"
+    ],
+    "title": "ExecutionStrategy"
+   },
+   "HTTPValidationError": {
+    "properties": {
+     "detail": {
+      "items": {
+       "$ref": "#/components/schemas/ValidationError"
+      },
+      "type": "array",
+      "title": "Detail"
+     }
+    },
+    "type": "object",
+    "title": "HTTPValidationError"
+   },
+   "InferenceBackend": {
+    "type": "string",
+    "enum": [
+     "nvinfer",
+     "nvinferserver"
+    ],
+    "title": "InferenceBackend"
+   },
+   "ModelAssignmentOut": {
+    "properties": {
+     "model_id": {
+      "type": "string",
+      "title": "Model Id"
+     },
+     "enabled": {
+      "type": "boolean",
+      "title": "Enabled"
+     },
+     "parent_model_id": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Parent Model Id"
+     },
+     "operate_on_class_ids": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "integer"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Operate On Class Ids"
+     },
+     "order": {
+      "type": "integer",
+      "title": "Order"
+     }
+    },
+    "type": "object",
+    "required": [
+     "model_id",
+     "enabled",
+     "order"
+    ],
+    "title": "ModelAssignmentOut"
+   },
+   "ModelCreate": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name"
+     },
+     "task": {
+      "$ref": "#/components/schemas/ModelTask"
+     },
+     "backend": {
+      "$ref": "#/components/schemas/InferenceBackend",
+      "default": "nvinfer"
+     },
+     "description": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Description"
+     },
+     "enabled": {
+      "type": "boolean",
+      "title": "Enabled",
+      "default": true
+     },
+     "version": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/ModelVersionIn"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "name",
+     "task"
+    ],
+    "title": "ModelCreate"
+   },
+   "ModelOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "name": {
+      "type": "string",
+      "title": "Name"
+     },
+     "task": {
+      "$ref": "#/components/schemas/ModelTask"
+     },
+     "backend": {
+      "$ref": "#/components/schemas/InferenceBackend"
+     },
+     "description": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Description"
+     },
+     "enabled": {
+      "type": "boolean",
+      "title": "Enabled"
+     },
+     "active_version": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/ModelVersionOut"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "versions": {
+      "items": {
+       "$ref": "#/components/schemas/ModelVersionOut"
+      },
+      "type": "array",
+      "title": "Versions"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "name",
+     "task",
+     "backend",
+     "description",
+     "enabled"
+    ],
+    "title": "ModelOut"
+   },
+   "ModelTask": {
+    "type": "string",
+    "enum": [
+     "detector",
+     "classifier",
+     "pose",
+     "segmentation",
+     "reid"
+    ],
+    "title": "ModelTask"
+   },
+   "ModelUpdate": {
+    "properties": {
+     "name": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Name"
+     },
+     "description": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Description"
+     },
+     "enabled": {
+      "anyOf": [
+       {
+        "type": "boolean"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Enabled"
+     },
+     "new_version": {
+      "anyOf": [
+       {
+        "$ref": "#/components/schemas/ModelVersionIn"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "activate_version": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Activate Version",
+      "description": "activate (or roll back to) an existing version"
+     }
+    },
+    "type": "object",
+    "title": "ModelUpdate"
+   },
+   "ModelVersionIn": {
+    "properties": {
+     "version": {
+      "type": "string",
+      "maxLength": 32,
+      "minLength": 1,
+      "title": "Version"
+     },
+     "onnx_file": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Onnx File"
+     },
+     "engine_file": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Engine File"
+     },
+     "labels": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Labels"
+     },
+     "precision": {
+      "type": "string",
+      "enum": [
+       "fp32",
+       "fp16",
+       "int8"
+      ],
+      "title": "Precision",
+      "default": "fp16"
+     },
+     "int8_calib_file": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Int8 Calib File"
+     },
+     "max_batch_size": {
+      "type": "integer",
+      "maximum": 256.0,
+      "minimum": 1.0,
+      "title": "Max Batch Size",
+      "default": 2
+     },
+     "input_shape": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "integer"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Input Shape"
+     },
+     "nvinfer_properties": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Nvinfer Properties"
+     },
+     "class_attrs": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Class Attrs"
+     },
+     "nvinferserver_config_file": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Nvinferserver Config File"
+     },
+     "embedding_dim": {
+      "anyOf": [
+       {
+        "type": "integer",
+        "maximum": 8192.0,
+        "minimum": 1.0
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Embedding Dim"
+     },
+     "est_memory_mb": {
+      "anyOf": [
+       {
+        "type": "integer",
+        "minimum": 0.0
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Est Memory Mb"
+     },
+     "activate": {
+      "type": "boolean",
+      "title": "Activate",
+      "default": true
+     }
+    },
+    "type": "object",
+    "required": [
+     "version"
+    ],
+    "title": "ModelVersionIn"
+   },
+   "ModelVersionOut": {
+    "properties": {
+     "id": {
+      "type": "integer",
+      "title": "Id"
+     },
+     "version": {
+      "type": "string",
+      "title": "Version"
+     },
+     "status": {
+      "$ref": "#/components/schemas/ModelVersionStatus"
+     },
+     "onnx_file": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Onnx File"
+     },
+     "engine_file": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Engine File"
+     },
+     "labels": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Labels"
+     },
+     "precision": {
+      "type": "string",
+      "title": "Precision"
+     },
+     "max_batch_size": {
+      "type": "integer",
+      "title": "Max Batch Size"
+     },
+     "input_shape": {
+      "anyOf": [
+       {
+        "items": {
+         "type": "integer"
+        },
+        "type": "array"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Input Shape"
+     },
+     "nvinfer_properties": {
+      "additionalProperties": true,
+      "type": "object",
+      "title": "Nvinfer Properties"
+     },
+     "embedding_dim": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Embedding Dim"
+     },
+     "est_memory_mb": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Est Memory Mb"
+     },
+     "failure_reason": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Failure Reason"
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Created At"
+     },
+     "activated_at": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "date-time"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Activated At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "version",
+     "status",
+     "onnx_file",
+     "engine_file",
+     "labels",
+     "precision",
+     "max_batch_size",
+     "input_shape",
+     "nvinfer_properties",
+     "embedding_dim",
+     "est_memory_mb",
+     "failure_reason",
+     "created_at",
+     "activated_at"
+    ],
+    "title": "ModelVersionOut"
+   },
+   "ModelVersionStatus": {
+    "type": "string",
+    "enum": [
+     "REGISTERED",
+     "ACTIVE",
+     "FAILED",
+     "RETIRED"
+    ],
+    "title": "ModelVersionStatus"
+   },
+   "Page": {
+    "properties": {
+     "total": {
+      "type": "integer",
+      "title": "Total"
+     },
+     "limit": {
+      "type": "integer",
+      "title": "Limit"
+     },
+     "offset": {
+      "type": "integer",
+      "title": "Offset"
+     },
+     "items": {
+      "items": {},
+      "type": "array",
+      "title": "Items"
+     }
+    },
+    "type": "object",
+    "required": [
+     "total",
+     "limit",
+     "offset",
+     "items"
+    ],
+    "title": "Page"
+   },
+   "StreamMode": {
+    "type": "string",
+    "enum": [
+     "none",
+     "annotated",
+     "raw",
+     "both"
+    ],
+    "title": "StreamMode"
+   },
+   "TokenRequest": {
+    "properties": {
+     "username": {
+      "type": "string",
+      "title": "Username"
+     },
+     "password": {
+      "type": "string",
+      "title": "Password"
+     }
+    },
+    "type": "object",
+    "required": [
+     "username",
+     "password"
+    ],
+    "title": "TokenRequest"
+   },
+   "TokenResponse": {
+    "properties": {
+     "access_token": {
+      "type": "string",
+      "title": "Access Token"
+     },
+     "token_type": {
+      "type": "string",
+      "title": "Token Type",
+      "default": "bearer"
+     },
+     "expires_in": {
+      "type": "integer",
+      "title": "Expires In"
+     },
+     "role": {
+      "type": "string",
+      "title": "Role"
+     }
+    },
+    "type": "object",
+    "required": [
+     "access_token",
+     "expires_in",
+     "role"
+    ],
+    "title": "TokenResponse"
+   },
+   "UserCreate": {
+    "properties": {
+     "username": {
+      "type": "string",
+      "maxLength": 64,
+      "minLength": 3,
+      "title": "Username"
+     },
+     "password": {
+      "type": "string",
+      "maxLength": 256,
+      "minLength": 12,
+      "title": "Password"
+     },
+     "role": {
+      "type": "string",
+      "enum": [
+       "admin",
+       "operator",
+       "viewer"
+      ],
+      "title": "Role",
+      "default": "viewer"
+     }
+    },
+    "type": "object",
+    "required": [
+     "username",
+     "password"
+    ],
+    "title": "UserCreate"
+   },
+   "ValidationError": {
+    "properties": {
+     "loc": {
+      "items": {
+       "anyOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "integer"
+        }
+       ]
+      },
+      "type": "array",
+      "title": "Location"
+     },
+     "msg": {
+      "type": "string",
+      "title": "Message"
+     },
+     "type": {
+      "type": "string",
+      "title": "Error Type"
+     },
+     "input": {
+      "title": "Input"
+     },
+     "ctx": {
+      "type": "object",
+      "title": "Context"
+     }
+    },
+    "type": "object",
+    "required": [
+     "loc",
+     "msg",
+     "type"
+    ],
+    "title": "ValidationError"
+   },
+   "WorkerOut": {
+    "properties": {
+     "id": {
+      "type": "string",
+      "title": "Id"
+     },
+     "node_id": {
+      "type": "string",
+      "title": "Node Id"
+     },
+     "gpu_device_id": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Gpu Device Id"
+     },
+     "pipeline_signature": {
+      "type": "string",
+      "title": "Pipeline Signature"
+     },
+     "model_set": {
+      "items": {},
+      "type": "array",
+      "title": "Model Set"
+     },
+     "capacity": {
+      "type": "integer",
+      "title": "Capacity"
+     },
+     "state": {
+      "$ref": "#/components/schemas/WorkerState"
+     },
+     "desired_state": {
+      "$ref": "#/components/schemas/DesiredState"
+     },
+     "health": {
+      "type": "string",
+      "title": "Health"
+     },
+     "pid": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Pid"
+     },
+     "restart_count": {
+      "type": "integer",
+      "title": "Restart Count"
+     },
+     "last_heartbeat_at": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "date-time"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Heartbeat At"
+     },
+     "started_at": {
+      "anyOf": [
+       {
+        "type": "string",
+        "format": "date-time"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Started At"
+     },
+     "last_error": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "title": "Last Error"
+     },
+     "camera_ids": {
+      "items": {
+       "type": "string"
+      },
+      "type": "array",
+      "title": "Camera Ids"
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "title": "Created At"
+     }
+    },
+    "type": "object",
+    "required": [
+     "id",
+     "node_id",
+     "gpu_device_id",
+     "pipeline_signature",
+     "model_set",
+     "capacity",
+     "state",
+     "desired_state",
+     "health",
+     "pid",
+     "restart_count",
+     "last_heartbeat_at",
+     "started_at",
+     "last_error",
+     "created_at"
+    ],
+    "title": "WorkerOut"
+   },
+   "WorkerState": {
+    "type": "string",
+    "enum": [
+     "CREATED",
+     "STARTING",
+     "RUNNING",
+     "DEGRADED",
+     "STOPPING",
+     "STOPPED",
+     "FAILED"
+    ],
+    "title": "WorkerState"
+   }
+  },
+  "securitySchemes": {
+   "HTTPBearer": {
+    "type": "http",
+    "scheme": "bearer"
+   }
+  }
+ }
+}

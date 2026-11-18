@@ -1,0 +1,32 @@
+# Elasticsearch + Kibana + Logstash via ECK (Elastic Cloud on Kubernetes) operator:
+#   helm repo add elastic https://helm.elastic.co && helm install elastic-operator elastic/eck-operator -n elastic-system --create-namespace
+# The Logstash pipeline is deploy/logstash/pipeline/kafka-to-es.conf.
+apiVersion: elasticsearch.k8s.elastic.co/v1
+kind: Elasticsearch
+metadata: {name: vms-es}
+spec:
+  version: 8.15.3
+  nodeSets:
+    - name: default
+      count: 3
+      config: {node.store.allow_mmap: false}
+      volumeClaimTemplates:
+        - metadata: {name: elasticsearch-data}
+          spec: {accessModes: [ReadWriteOnce], resources: {requests: {storage: 500Gi}}}
+---
+apiVersion: kibana.k8s.elastic.co/v1
+kind: Kibana
+metadata: {name: vms-kibana}
+spec:
+  version: 8.15.3
+  count: 1
+  elasticsearchRef: {name: vms-es}
+---
+apiVersion: logstash.k8s.elastic.co/v1alpha1
+kind: Logstash
+metadata: {name: vms-logstash}
+spec:
+  version: 8.15.3
+  count: 2
+  elasticsearchRefs: [{name: vms-es, clusterName: vms-es}]
+  pipelinesRef: {secretName: vms-logstash-pipelines}   # kubectl create secret generic vms-logstash-pipelines --from-file=pipelines.yml --from-file=kafka-to-es.conf

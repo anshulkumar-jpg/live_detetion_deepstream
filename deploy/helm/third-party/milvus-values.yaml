@@ -1,0 +1,13 @@
+# helm repo add milvus https://zilliztech.github.io/milvus-helm/ && helm install vms-milvus milvus/milvus -f milvus-values.yaml -n vms
+# Service: vms-milvus:19530. Use cluster mode + external object storage for large deployments.
+cluster: {enabled: false}
+image: {all: {tag: v2.5.4}}
+standalone:
+  messageQueue: rocksmq
+  resources: {requests: {cpu: "2", memory: 8Gi}}
+  persistence: {persistentVolumeClaim: {size: 100Gi}}
+pulsar: {enabled: false}
+pulsarv3: {enabled: false}
+kafka: {enabled: false}
+etcd: {replicaCount: 1}
+minio: {mode: standalone, persistence: {size: 200Gi}}

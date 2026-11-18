@@ -1,0 +1,48 @@
+# GPU node agent: one pod per GPU node. Requests the node's GPUs through the NVIDIA device plugin
+# (nvidia.com/gpu); Kubernetes does not create GPU capacity - admission control still applies.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ .Release.Name }}-gpu-agent
+  labels: {{- include "vms.labels" . | nindent 4 }}
+spec:
+  selector: {matchLabels: {app: {{ .Release.Name }}-gpu-agent}}
+  updateStrategy: {type: RollingUpdate, rollingUpdate: {maxUnavailable: 1}}
+  template:
+    metadata:
+      labels: {app: {{ .Release.Name }}-gpu-agent}
+      annotations: {prometheus.io/scrape: "true", prometheus.io/port: "9102"}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.gpuAgent.runtimeClassName }}
+      runtimeClassName: {{ .Values.gpuAgent.runtimeClassName }}
+      {{- end }}
+      nodeSelector: {{- toYaml .Values.gpuAgent.nodeSelector | nindent 8 }}
+      tolerations: {{- toYaml .Values.gpuAgent.tolerations | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.gpuAgent.terminationGracePeriodSeconds }}
+      containers:
+        - name: agent
+          image: "{{ .Values.image.worker.repository }}:{{ .Values.image.worker.tag }}"
+          imagePullPolicy: {{ .Values.image.worker.pullPolicy }}
+          command: ["python3", "-m", "worker.agent"]
+          ports: [{name: metrics, containerPort: 9102}]
+          env:
+            - {name: NODE_ID, valueFrom: {fieldRef: {fieldPath: spec.nodeName}}}
+            - {name: NVIDIA_DRIVER_CAPABILITIES, value: "compute,utility,video"}
+            - {name: MODEL_REPOSITORY_DIR, value: /models}
+          {{- include "vms.env" . | nindent 10 }}
+          resources:
+            requests: {{- toYaml .Values.gpuAgent.resources.requests | nindent 14 }}
+            limits:
+              {{- toYaml .Values.gpuAgent.resources.limits | nindent 14 }}
+              nvidia.com/gpu: {{ .Values.gpuAgent.gpusPerNode }}
+          readinessProbe: {tcpSocket: {port: metrics}, periodSeconds: 10}
+          livenessProbe: {tcpSocket: {port: metrics}, periodSeconds: 20, failureThreshold: 3}
+          volumeMounts:
+            - {name: models, mountPath: /models}
+            - {name: generated, mountPath: /opt/vms/generated}
+      volumes:
+        - {name: models, persistentVolumeClaim: {claimName: {{ .Values.gpuAgent.modelsPVC }}}}
+        - {name: generated, emptyDir: {}}

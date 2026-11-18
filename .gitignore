@@ -1,0 +1,10 @@
+.env
+*.pyc
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+models/
+deploy/envoy/certs/*
+!deploy/envoy/certs/.gitkeep
+*.engine
+generated/

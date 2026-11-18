@@ -1,0 +1,17 @@
+# Control plane / analytics services (python:3.12 image). Versions are the ones the test suite ran against.
+fastapi==0.163.1
+uvicorn[standard]==0.54.0
+SQLAlchemy[asyncio]==2.1.9
+asyncpg==0.32.0
+alembic==1.20.1
+pydantic==2.13.5
+pydantic-settings==2.16.3
+PyJWT==2.15.0
+cryptography==50.0.1
+confluent-kafka==2.16.1
+prometheus-client==0.26.0
+httpx==0.28.1
+pymilvus==2.5.18  # matches Milvus server v2.5.x in docker-compose
+numpy==2.5.3
+nvidia-ml-py==13.615.71
+PyYAML==6.0.3

@@ -1,0 +1,15 @@
+# PostgreSQL via CloudNativePG. Operator:
+#   helm repo add cnpg https://cloudnative-pg.github.io/charts && helm install cnpg cnpg/cloudnative-pg -n cnpg-system --create-namespace
+# Service for the app: vms-db-rw:5432 (DATABASE_URL=postgresql+asyncpg://vms:<pw>@vms-db-rw:5432/vms)
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: vms-db
+spec:
+  instances: 3
+  imageName: ghcr.io/cloudnative-pg/postgresql:16
+  bootstrap:
+    initdb: {database: vms, owner: vms}
+  storage: {size: 100Gi}
+  postgresql:
+    parameters: {max_connections: "300", shared_buffers: "1GB"}
