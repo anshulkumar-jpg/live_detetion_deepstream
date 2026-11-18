@@ -222,10 +222,24 @@ async def assign_models(camera_id: str, body: CameraModelsRequest, request: Requ
             raise HTTPException(422, f"model '{m.model_id}' has no active version")
         if m.enabled and not models[m.model_id].enabled:
             raise HTTPException(422, f"model '{m.model_id}' is disabled")
+    wanted = [m for m in body.models if m.detect_class_ids]
+    if wanted:  # the camera may only pick classes the model offers
+        from app.core.classes import selectable_classes
+        from app.db.models import ModelVersion
+        vers = {v.id: v for v in (await db.execute(select(ModelVersion).where(
+            ModelVersion.id.in_([models[m.model_id].active_version_id for m in wanted])))).scalars()}
+        for m in wanted:
+            v = vers[models[m.model_id].active_version_id]
+            ok = {i for i, _ in selectable_classes(v.nvinfer_properties or {}, v.labels or [])}
+            bad = sorted(set(m.detect_class_ids) - ok)
+            if bad:
+                raise HTTPException(422, f"model '{m.model_id}' cannot detect class id(s) {bad}; allowed: {sorted(ok)}")
     await db.execute(delete(CameraModelAssignment).where(CameraModelAssignment.camera_id == cam.id))
     for i, m in enumerate(body.models):
         db.add(CameraModelAssignment(camera_id=cam.id, model_id=m.model_id, enabled=m.enabled,
-                                     parent_model_id=m.parent_model_id, operate_on_class_ids=m.operate_on_class_ids, order=i))
+                                     parent_model_id=m.parent_model_id, operate_on_class_ids=m.operate_on_class_ids,
+                                     detect_class_ids=sorted(set(m.detect_class_ids)) if m.detect_class_ids else None,
+                                     conf_threshold=m.conf_threshold, iou_threshold=m.iou_threshold, order=i))
     cam.execution_strategy = strategy
     if body.tracking_enabled is not None:
         cam.tracking_enabled = body.tracking_enabled

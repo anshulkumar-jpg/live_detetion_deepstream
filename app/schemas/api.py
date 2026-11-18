@@ -5,6 +5,7 @@ import re
 from datetime import datetime
 from typing import Any, Literal
 
+from app.core.trackers import TrackerType
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.db.models import (
@@ -56,7 +57,7 @@ class CameraBase(BaseModel):
     fps: int = Field(default=30, ge=1, le=120)
     codec_hint: Literal["h264", "h265", "mjpeg"] | None = None
     tracking_enabled: bool = True
-    tracker_type: Literal["NvDCF", "NvSORT", "IOU", "NvDeepSORT"] = "NvDCF"
+    tracker_type: TrackerType = "NvDCF"
     detection_interval: int = Field(default=0, ge=0, le=4)  # frames skipped between detections
     execution_strategy: ExecutionStrategy = ExecutionStrategy.INDEPENDENT
     stream_mode: StreamMode = StreamMode.NONE
@@ -90,7 +91,7 @@ class CameraUpdate(BaseModel):
     fps: int | None = Field(default=None, ge=1, le=120)
     codec_hint: Literal["h264", "h265", "mjpeg"] | None = None
     tracking_enabled: bool | None = None
-    tracker_type: Literal["NvDCF", "NvSORT", "IOU", "NvDeepSORT"] | None = None
+    tracker_type: TrackerType | None = None
     detection_interval: int | None = Field(default=None, ge=0, le=4)
     execution_strategy: ExecutionStrategy | None = None
     stream_mode: StreamMode | None = None
@@ -109,6 +110,9 @@ class ModelAssignmentOut(BaseModel):
     enabled: bool
     parent_model_id: str | None = None
     operate_on_class_ids: list[int] | None = None
+    detect_class_ids: list[int] | None = None
+    conf_threshold: float | None = None
+    iou_threshold: float | None = None
     order: int
 
 
@@ -206,6 +210,7 @@ class ModelVersionOut(BaseModel):
     max_batch_size: int
     input_shape: list[int] | None
     nvinfer_properties: dict[str, Any]
+    class_attrs: dict[str, Any] = Field(default_factory=dict)
     embedding_dim: int | None
     est_memory_mb: int | None
     failure_reason: str | None
@@ -231,12 +236,15 @@ class CameraModelItem(BaseModel):
     enabled: bool = True
     parent_model_id: str | None = None
     operate_on_class_ids: list[int] | None = None
+    detect_class_ids: list[int] | None = Field(default=None, min_length=1, max_length=256)  # None = all classes
+    conf_threshold: float | None = Field(default=None, ge=0.01, le=0.99)  # min detection confidence (None = default)
+    iou_threshold: float | None = Field(default=None, ge=0.05, le=0.95)   # NMS overlap limit (None = default)
 
 
 class CameraModelsRequest(BaseModel):
     models: list[CameraModelItem] = Field(min_length=1, max_length=16)
     tracking_enabled: bool | None = None
-    tracker_type: Literal["NvDCF", "NvSORT", "IOU", "NvDeepSORT"] | None = None
+    tracker_type: TrackerType | None = None
     detection_interval: int | None = Field(default=None, ge=0, le=4)
     execution_strategy: ExecutionStrategy | None = None
 

@@ -101,11 +101,21 @@ def cameras(api: Api) -> list[dict]:
     return d.get("items", d) if isinstance(d, dict) else d
 
 
+LABELS: dict[str, list[str]] = {}
+
+
 def model_text(c: dict) -> str:
     ms = sorted(c.get("models", []), key=lambda m: m.get("order", 0))
     parts = []
     for m in ms:
         name = m["model_id"].replace("_detection", "")
+        ids = m.get("detect_class_ids")
+        if ids:  # the camera detects only some of the model's classes
+            lab = LABELS.get(m["model_id"], [])
+            name += "[" + ",".join(lab[i] if i < len(lab) else str(i) for i in ids) + "]"
+        if m.get("conf_threshold") or m.get("iou_threshold"):  # camera uses its own sensitivity
+            name += " c" + format(m["conf_threshold"], "g") if m.get("conf_threshold") else ""
+            name += " i" + format(m["iou_threshold"], "g") if m.get("iou_threshold") else ""
         parts.append(f"{name} (posture)" if m.get("parent_model_id") else name)
     return " -> ".join(parts) if len(parts) > 1 and any(m.get("parent_model_id") for m in ms) else " + ".join(parts) or "-"
 
@@ -134,13 +144,19 @@ def gpu_line(api: Api) -> str:
 
 def show(api: Api, viewer_port: int) -> int:
     cams = cameras(api)
+    if any(m.get("detect_class_ids") for c in cams for m in c.get("models", [])):
+        try:
+            for md in api.get("/models").json():
+                LABELS[md["id"]] = (md.get("active_version") or {}).get("labels") or []
+        except Exception:
+            pass
     stats = worker_stats(api)
     running = sum(1 for c in cams if c["status"] == "RUNNING")
     print("\033[2J\033[H" if os.name != "nt" else "", end="")
     print(f"{B}=== DeepStream VMS  |  cameras live: {running}/{len(cams)} ==={X}")
     print(f"{D}{gpu_line(api)}{X}\n")
-    print(f"{B}{'CAMERA':<11} {'STATUS':<9} {'MODEL RUNNING':<26} {'DETECTION':<16} {'TRACK':<6}{'FPS':>4} {'LAG':>5}  WORKER{X}")
-    print("-" * 91)
+    print(f"{B}{'CAMERA':<11} {'STATUS':<9} {'MODEL RUNNING':<40} {'DETECTION':<16} {'TRACKER':<11}{'FPS':>4} {'LAG':>5}  WORKER{X}")
+    print("-" * 110)
     for c in sorted(cams, key=lambda c: c["id"]):
         st = c["status"]
         col = G if st == "RUNNING" else (Y if st in ("STARTING", "SCHEDULED", "PENDING_CAPACITY") else R)
@@ -148,9 +164,11 @@ def show(api: Api, viewer_port: int) -> int:
         fps = f"{s['fps']:.0f}" if s.get("fps") else "-"
         lat = f"{s['lat']:.0f}" if s.get("lat") else "-"
         n = c.get("detection_interval") or 0
+        if c.get("tracker_type") in ("ByteTrack", "OCSORT", "BoTSORT", "StrongSORT"):
+            n = 0  # python trackers need detection on every frame
         det = "every frame" if n == 0 else f"every {n + 1}nd frame" if n == 1 else f"every {n + 1}rd frame" if n == 2 else f"every {n + 1}th frame"
-        trk = "every fr." if c.get("tracking_enabled", True) else "off"
-        print(f"{c['id']:<11} {col}{st:<9}{X} {model_text(c):<26} {det:<16} {trk:<6}{fps:>4} {lat:>5}  {s.get('worker', '-')}")
+        trk = (c.get("tracker_type") or "NvDCF") if c.get("tracking_enabled", True) else "off"
+        print(f"{c['id']:<11} {col}{st:<9}{X} {model_text(c):<40} {det:<16} {trk:<11}{fps:>4} {lat:>5}  {s.get('worker', '-')}")
         if st not in ("RUNNING", "STOPPED") and c.get("status_reason"):
             print(f"{'':<11} {D}{c['status_reason']}{X}")
     print(f"\n{B}Live video (all cameras):{X} http://localhost:{viewer_port}")

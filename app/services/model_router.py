@@ -17,6 +17,7 @@ import json
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+from app.core.trackers import ALL_TRACKERS, is_python_tracker
 from app.db.models import (
     Camera,
     CameraModelAssignment,
@@ -28,7 +29,7 @@ from app.db.models import (
     ModelVersionStatus,
 )
 
-TRACKERS = {"NvDCF", "NvSORT", "IOU", "NvDeepSORT"}
+TRACKERS = set(ALL_TRACKERS)
 
 
 class RoutingError(ValueError):
@@ -58,6 +59,9 @@ class InferenceStage:
     nvinferserver_config_file: str | None = None
     embedding_dim: int | None = None
     output_tensor_meta: bool = False
+    detect_class_ids: list[int] | None = None  # classes this camera wants (None = all the model offers)
+    conf_threshold: float | None = None        # per-camera minimum confidence (None = model default)
+    iou_threshold: float | None = None         # per-camera NMS IoU (None = model default)
 
 
 @dataclass
@@ -87,6 +91,9 @@ class PipelinePlan:
             "stages": [
                 [s.model_id, s.model_version_id, s.process_mode, s.parent_model_id,
                  sorted(s.operate_on_class_ids or [])]
+                + (["detect", sorted(s.detect_class_ids)] if s.detect_class_ids else [])
+                + (["conf", s.conf_threshold] if s.conf_threshold else [])
+                + (["iou", s.iou_threshold] if s.iou_threshold else [])
                 for s in self.stages
             ],
             "tracking": self.tracking_enabled,
@@ -200,6 +207,8 @@ def build_plan(
             nvinferserver_config_file=v.nvinferserver_config_file, embedding_dim=v.embedding_dim,
             output_tensor_meta=m.task in (ModelTask.REID, ModelTask.POSE)
             or bool((v.nvinfer_properties or {}).get("output-tensor-meta")),
+            detect_class_ids=sorted(set(a.detect_class_ids)) if getattr(a, "detect_class_ids", None) else None,
+            conf_threshold=getattr(a, "conf_threshold", None), iou_threshold=getattr(a, "iou_threshold", None),
         )
         if v.precision == "int8" and not v.int8_calib_file and not v.engine_file:
             raise RoutingError(f"model '{m.id}' int8 precision requires int8_calib_file or a prebuilt engine")
@@ -232,4 +241,6 @@ def build_plan(
 
     return PipelinePlan(stages=stages, tracking_enabled=camera.tracking_enabled,
                         tracker_type=camera.tracker_type, execution_strategy=camera.execution_strategy.value,
-                        detection_interval=int(getattr(camera, "detection_interval", 0) or 0))
+                        # python trackers (ByteTrack, OC-SORT, ...) need a detection on every frame, so the interval is forced to 0
+                        detection_interval=0 if is_python_tracker(camera.tracker_type)
+                        else int(getattr(camera, "detection_interval", 0) or 0))

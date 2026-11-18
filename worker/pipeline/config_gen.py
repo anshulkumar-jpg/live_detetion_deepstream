@@ -80,6 +80,13 @@ def nvinfer_config(stage: dict[str, Any], gpu_id: int, repo: str, labels_path: s
         if k.startswith("x-vms-"):
             continue  # platform-private hints, not nvinfer keys
         props[k] = v
+    if stage.get("detect_class_ids") and stage["process_mode"] == 1:  # camera picked a subset of the model's classes
+        from app.core.classes import filter_out_for
+        drop = filter_out_for(props, stage.get("labels") or [], stage["detect_class_ids"])
+        if drop:
+            props["filter-out-class-ids"] = drop
+        else:
+            props.pop("filter-out-class-ids", None)
     for k in ("custom-lib-path", "onnx-file", "model-engine-file", "int8-calib-file", "labelfile-path"):
         if k in props and isinstance(props[k], str):
             props[k] = resolve(props[k], repo)
@@ -88,6 +95,17 @@ def nvinfer_config(stage: dict[str, Any], gpu_id: int, repo: str, labels_path: s
     class_attrs = stage.get("class_attrs") or {}
     if stage["task"] == "detector" and "all" not in class_attrs:
         class_attrs = {"all": {"pre-cluster-threshold": 0.25}, **class_attrs}
+    conf, iou = stage.get("conf_threshold"), stage.get("iou_threshold")
+    if stage["task"] == "detector" and stage["process_mode"] == 1 and (conf or iou):
+        patched = {}  # the camera chose its own sensitivity: it replaces the model default in every class block
+        for cls, attrs in class_attrs.items():
+            attrs = dict(attrs)
+            if conf:
+                attrs["pre-cluster-threshold"] = float(conf)
+            if iou:
+                attrs["nms-iou-threshold"] = float(iou)
+            patched[cls] = attrs
+        class_attrs = patched
     for cls, attrs in class_attrs.items():
         lines.append("")
         lines.append(f"[class-attrs-{cls}]")

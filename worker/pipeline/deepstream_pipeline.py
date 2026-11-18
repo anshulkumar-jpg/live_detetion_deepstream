@@ -32,6 +32,8 @@ from gi.repository import GLib, Gst  # noqa: E402
 import pyds  # noqa: E402
 
 from app.core.security import inject_credentials  # noqa: E402
+from app.core.trackers import is_python_tracker  # noqa: E402
+from worker.tracking import make_tracker  # noqa: E402
 from worker.pipeline.config_gen import tracker_properties, write_stage_configs  # noqa: E402
 from worker.pipeline.events import EventEmitter, FrameResult, ObjectResult, SourceStats  # noqa: E402
 
@@ -86,6 +88,10 @@ class PipelineGroup:
             st["gie_unique_id"] for st in self.plan["stages"]
             if (st.get("nvinfer_properties") or {}).get("x-vms-decode") == "yolo_classes"
         }
+        # ByteTrack / OC-SORT / BoT-SORT / StrongSORT: pure-python trackers, one instance per source (camera)
+        self.py_tracking = bool(self.plan["tracking_enabled"]) and is_python_tracker(self.plan["tracker_type"])
+        self.py_trackers: dict[int, Any] = {}
+        self.primary_gies = {st["gie_unique_id"] for st in self.plan["stages"] if st["process_mode"] == 1}
         self.fatal: PipelineError | None = None
         self._build_core()
 
@@ -119,7 +125,7 @@ class PipelineGroup:
         for st in self.plan["stages"]:
             if st["process_mode"] == 1:
                 chain.append(infer(st))
-        if self.plan["tracking_enabled"]:
+        if self.plan["tracking_enabled"] and not self.py_tracking:  # python trackers run in the metadata probe
             trk = self._make("nvtracker", "tracker")
             for k, v in tracker_properties(self.plan["tracker_type"], self.s, self.gpu).items():
                 trk.set_property(k, v)
@@ -253,6 +259,7 @@ class PipelineGroup:
             self.on_event("SOURCE_REMOVED", {"camera_id": camera_id, "reason": reason})
 
     def _detach(self, slot: SourceSlot) -> None:
+        self.py_trackers.pop(slot.index, None)  # forget python-tracker state (new camera must not inherit old ids)
         if slot.bin is not None:
             slot.bin.set_state(Gst.State.NULL)
             sinkpad = self.mux.get_static_pad(f"sink_{slot.index}")
@@ -290,11 +297,57 @@ class PipelineGroup:
                     if slot.status != "RUNNING":
                         slot.status, slot.reason = "RUNNING", None
                         self.on_event("SOURCE_RUNNING", {"camera_id": slot.camera_id})
+                    if self.py_tracking:
+                        self._py_track(fm)
                     self.emitter.process(slot.camera_id, self._frame_result(fm), self.mux_w, self.mux_h)
                 l_frame = l_frame.next
         except Exception:  # never let analytics break the video path
             log.exception("metadata probe error")
         return Gst.PadProbeReturn.OK
+
+    def _embedding(self, om):
+        """Re-ID embedding of one object (from a 'reid' secondary model), or None."""
+        l_user = om.obj_user_meta_list
+        while l_user is not None:
+            um = pyds.NvDsUserMeta.cast(l_user.data)
+            if um.base_meta.meta_type == pyds.NvDsMetaType.NVDSINFER_TENSOR_OUTPUT_META:
+                tm = pyds.NvDsInferTensorMeta.cast(um.user_meta_data)
+                if tm.unique_id in self.reid_gies:
+                    layer = pyds.get_nvds_LayerInfo(tm, 0)
+                    dim = self.gie_to_stage[tm.unique_id].get("embedding_dim") or self.s.embedding_dim
+                    ptr = ctypes.cast(pyds.get_ptr(layer.buffer), ctypes.POINTER(ctypes.c_float))
+                    return [float(ptr[k]) for k in range(dim)]
+            l_user = l_user.next
+        return None
+
+    def _py_track(self, fm) -> None:
+        """Run the python tracker of this source on the detector's boxes and write the track ids back."""
+        import numpy as np
+
+        tracker = self.py_trackers.get(fm.pad_index)
+        if tracker is None:
+            tracker = self.py_trackers[fm.pad_index] = make_tracker(self.plan["tracker_type"])
+        objs, boxes, scores, classes, feats = [], [], [], [], []
+        l_obj = fm.obj_meta_list
+        while l_obj is not None:
+            om = pyds.NvDsObjectMeta.cast(l_obj.data)
+            if om.unique_component_id in self.primary_gies:
+                r = om.rect_params
+                objs.append(om)
+                boxes.append([r.left, r.top, r.left + r.width, r.top + r.height])
+                scores.append(float(om.confidence))
+                classes.append(int(om.class_id))
+                if self.reid_gies:
+                    feats.append(self._embedding(om))
+            l_obj = l_obj.next
+        f = None
+        if feats and all(x is not None for x in feats):
+            f = np.asarray(feats, dtype=float)
+        ids = tracker.update(np.asarray(boxes, dtype=float).reshape(-1, 4), np.asarray(scores), np.asarray(classes), f)
+        for om, tid in zip(objs, ids):
+            if tid > 0:
+                om.object_id = int(tid)
+                om.text_params.display_text = f"{om.obj_label or 'obj'} {int(tid)}"
 
     POSTURE_COLORS = {"standing": (0.0, 0.85, 0.0), "sitting": (1.0, 0.6, 0.0), "fallen": (1.0, 0.0, 0.0)}
 
@@ -311,6 +364,8 @@ class PipelineGroup:
             props = stage.get("nvinfer_properties") or {}
             labels = stage.get("labels") or []
             min_score = float(props.get("x-vms-min-score", 0.35))
+            if stage.get("conf_threshold"):  # the camera set its own confidence for this model
+                min_score = float(stage["conf_threshold"])
             label, score, source = None, 0.0, "est"
             l_user = om.obj_user_meta_list
             while l_user is not None:
@@ -339,6 +394,9 @@ class PipelineGroup:
                     label = "fallen"
                 else:
                     label = "sitting"
+            picked = stage.get("detect_class_ids")  # postures the camera wants highlighted (None = all)
+            if picked and label not in {labels[i] for i in picked if i < len(labels)}:
+                return
             o.classifications.append({"gie_id": gie, "label": label, "class_id": -1, "prob": score, "source": source})
             base = f"person {int(om.object_id)}" if om.object_id < 2**63 else "person"
             om.text_params.display_text = f"{base} {label.upper()}"

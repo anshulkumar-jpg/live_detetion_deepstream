@@ -228,6 +228,11 @@ class CameraModelAssignment(Base):
     # cascade: run this model on objects produced by parent_model_id
     parent_model_id: Mapped[str | None] = mapped_column(ForeignKey("models.id", ondelete="RESTRICT"))
     operate_on_class_ids: Mapped[list | None] = mapped_column(JsonType)
+    # classes of this model the camera should detect (None = every class the model offers)
+    detect_class_ids: Mapped[list | None] = mapped_column(JsonType)
+    # per-camera detector sensitivity (None = the model's registered default)
+    conf_threshold: Mapped[float | None] = mapped_column(Float)
+    iou_threshold: Mapped[float | None] = mapped_column(Float)
     order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
