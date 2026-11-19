@@ -1,0 +1,134 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip}
+      - run: pip install ruff
+      - run: ruff check .
+      - name: Shell scripts and workflows parse
+        run: |
+          bash -n deploy/kafka/kafka-init.sh deploy/elasticsearch/setup.sh
+          python -c "import yaml,glob; [list(yaml.safe_load_all(open(f))) for f in glob.glob('deploy/**/*.y*ml', recursive=True) if 'helm/vms/templates' not in f]"
+
+  tests:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: {POSTGRES_USER: vms, POSTGRES_PASSWORD: vms, POSTGRES_DB: vms_test}
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U vms" --health-interval 5s --health-timeout 5s --health-retries 10
+      kafka:
+        image: apache/kafka:3.9.1
+        ports: ["9092:9092"]
+        options: >-
+          --health-cmd "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092"
+          --health-interval 10s --health-timeout 10s --health-retries 15
+    env:
+      TEST_DATABASE_URL: postgresql+asyncpg://vms:vms@localhost:5432/vms_test
+      TEST_KAFKA_BOOTSTRAP: localhost:9092
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip}
+      - run: pip install -r requirements-dev.txt
+      - name: Migrations apply to an empty database and match the models
+        env: {DATABASE_URL: "postgresql+asyncpg://vms:vms@localhost:5432/vms_test", ENVIRONMENT: test}
+        run: |
+          python -m alembic upgrade head
+          python -m alembic check
+          python -m alembic downgrade base
+      - name: Unit + integration tests (PostgreSQL, Kafka, Milvus Lite)
+        run: pytest tests -v --junitxml=test-results.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: test-results, path: test-results.xml}
+
+  security-scan:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip}
+      - run: pip install pip-audit
+      - name: Known-vulnerable Python dependencies
+        run: pip-audit -r requirements.txt -r requirements-worker.txt --no-deps --disable-pip || pip-audit -r requirements.txt
+      - name: Trivy - repository files, secrets and misconfiguration
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          scan-type: fs
+          scanners: vuln,secret,misconfig
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+          ignore-unfixed: true
+
+  images:
+    runs-on: ubuntu-24.04
+    needs: [lint]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the API image
+        run: docker build -f docker/Dockerfile.api -t vms-api:ci .
+      - name: Trivy - API image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: vms-api:ci
+          severity: CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
+      - name: Check the GPU worker Dockerfile (the base image is ~10 GB, so CI checks it instead of building it)
+        run: docker build --check -f docker/Dockerfile.worker .
+      - name: Every COPY source of the worker image exists in the repository
+        run: |
+          for p in requirements-worker.txt app worker scripts config; do test -e "$p" || { echo "missing: $p"; exit 1; }; done
+          test -f config/models/models.yaml
+      - name: Compose files are valid
+        run: |
+          python3 - <<'EOF' > ci.env
+          import re
+          for l in open(".env.example"):
+              l = l.rstrip("\n")
+              if "=" in l and not l.startswith("#"):
+                  k, v = l.split("=", 1)
+                  print(f"{k}={'x'*40 if v.startswith('CHANGE_ME') else v}")
+          for k in "SCHEDULER AGENT ANALYTICS MTMC API LOGSTASH EXPORTER".split():
+              print(f"KAFKA_PASS_{k}={'y'*30}")
+          print("KAFKA_KEYSTORE_PASSWORD=" + "y"*30)
+          EOF
+          docker compose --env-file ci.env --profile analytics --profile monitoring config -q
+
+  gateway:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate the Envoy configuration (pinned version)
+        run: |
+          mkdir certs && openssl req -x509 -newkey rsa:2048 -nodes -keyout certs/tls.key -out certs/tls.crt -days 1 -subj "/CN=ci"
+          docker run --rm -v "$PWD/deploy/envoy/envoy.yaml:/etc/envoy/envoy.yaml:ro" -v "$PWD/certs:/etc/envoy/certs:ro" \
+            envoyproxy/envoy:v1.31.10 --mode validate -c /etc/envoy/envoy.yaml
+      - name: Envoy tag in compose is pinned
+        run: "! grep -n 'envoy:.*latest' docker-compose.yml"
+
+  helm:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - run: helm lint deploy/helm/vms --set image.tag=ci
+      - run: helm template deploy/helm/vms --set image.tag=ci > /dev/null

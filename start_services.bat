@@ -8,7 +8,14 @@ echo   DeepStream VMS - starting all Docker services
 echo ================================================================
 echo.
 
-if not exist ".env" goto noenv
+where python >nul 2>&1
+if errorlevel 1 goto nopython
+
+REM ---- 0. Secrets and security files (safe to repeat: only creates what is missing, never overwrites) ----
+REM Creates .env from .env.example if needed, generates every CHANGE_ME secret (JWT, encryption key, command signing key,
+REM publish token, database, Elasticsearch ...), the Kafka certificates/logins and the MediaMTX logins.
+python scripts\vms.py init
+if errorlevel 1 goto secfail
 
 REM ---- 1. Docker Desktop must be running ----
 docker info >nul 2>&1
@@ -46,8 +53,20 @@ REM ---- 3. Start everything ----
 :startnow
 echo.
 echo Starting services - the first start can take a few minutes...
+REM fewer parallel downloads: big registries (Elastic, Docker Hub) sometimes time out on a slow connection
+set COMPOSE_PARALLEL_LIMIT=2
+set /a uptries=0
+:upagain
+set /a uptries+=1
 docker compose %PROFILES% up -d
-if errorlevel 1 goto composefail
+if not errorlevel 1 goto upok
+if %uptries% GEQ 4 goto composefail
+echo.
+echo Start failed - often just a slow download. Retrying in 10 seconds, attempt %uptries% of 3 ...
+echo Layers that already finished are kept, so each retry continues where the last one stopped.
+timeout /t 10 /nobreak >nul
+goto upagain
+:upok
 
 echo.
 echo ================================================================
@@ -59,7 +78,8 @@ echo.
 echo ================================================================
 echo   Addresses
 echo ================================================================
-echo   API / gateway : https://localhost:8443        API docs at /docs
+echo   API / gateway : https://localhost:8443        sign in as admin - password: BOOTSTRAP_ADMIN_PASSWORD in .env
+echo                   API docs /docs are off in production
 echo   Live viewer   : run  run_all.bat  to start cameras and open http://localhost:8080
 echo   Kibana        : http://localhost:5601         only if analytics was started
 echo   Grafana       : http://localhost:3000         only if monitoring was started
@@ -70,8 +90,13 @@ echo.
 pause
 exit /b 0
 
-:noenv
-echo [ERROR] .env file not found. Copy .env.example to .env and fill every CHANGE_ME first.
+:secfail
+echo [ERROR] Could not create the secrets / security files. Run:  pip install -r requirements.txt   then start this again.
+pause
+exit /b 1
+
+:nopython
+echo [ERROR] Python was not found. Install Python 3.10 or newer from https://www.python.org and run this again.
 pause
 exit /b 1
 

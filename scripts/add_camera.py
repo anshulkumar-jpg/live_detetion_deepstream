@@ -23,6 +23,11 @@ from pathlib import Path
 
 import httpx
 
+try:
+    from scripts._tls import tls_verify
+except ImportError:  # run as "python scripts/x.py"
+    from _tls import tls_verify
+
 ROOT = Path(__file__).resolve().parent.parent
 G, Y, R, C, D, B, X = "\033[32m", "\033[33m", "\033[31m", "\033[36m", "\033[2m", "\033[1m", "\033[0m"
 if os.name == "nt":
@@ -341,7 +346,7 @@ def interval_menu(title: str) -> int:
 
 class Api:
     def __init__(self, base: str, user: str, password: str) -> None:
-        self.base, self.http = base, httpx.Client(verify=False, timeout=30)
+        self.base, self.http = base, httpx.Client(verify=tls_verify(), timeout=30)
         r = self.http.post(f"{base}/api/v1/auth/token", json={"username": user, "password": password})
         r.raise_for_status()
         self.h = {"Authorization": f"Bearer {r.json()['access_token']}"}
@@ -401,6 +406,18 @@ def main() -> int:
     default_prefix = "CAM" + ip.split(".")[-1] if len(live) == 1 and max_ch == 1 else "NVR" + ip.split(".")[-1]
     prefix = ask("   Name prefix for the cameras", default_prefix,
                  lambda v: None if re.fullmatch(r"[A-Za-z0-9_.-]{1,40}", v) else "Use letters, numbers, _ . - only.")
+
+    # Tell the user BEFORE asking about models which of these channels are already registered.
+    existing = {c["id"] for c in (api.call("GET", "/cameras", params={"limit": 1000}).json() or {}).get("items", [])}
+    dup = [ch for ch in picked if f"{prefix}_CH{ch:02d}" in existing]
+    if dup:
+        print(f"\n{Y}Already added (camera id exists):{X} " + ", ".join(f"channel {ch} = {prefix}_CH{ch:02d}" for ch in dup))
+        if input(f"{B}Change the models/settings of these existing cameras? [y/N]{X}: ").strip().lower() != "y":
+            picked = [ch for ch in picked if ch not in dup]
+            if not picked:
+                print("Nothing new to add. Cancelled.")
+                return 0
+            print(f"{D}Skipping them; continuing with the new channels: {', '.join(map(str, picked))}{X}")
 
     mode = "1"
     if len(picked) > 1:
@@ -529,7 +546,7 @@ def main() -> int:
                 "username": user, "password": pw}
         r = api.call("POST", "/cameras", json=body)
         if r.status_code == 409:
-            print(f"  {Y}{cid} already exists - updating its models{X}")
+            print(f"  {Y}{cid} already exists - its models are being updated{X}")
         elif r.status_code >= 300:
             print(f"  {R}{cid}: could not add ({r.status_code}) {r.text[:150]}{X}")
             continue

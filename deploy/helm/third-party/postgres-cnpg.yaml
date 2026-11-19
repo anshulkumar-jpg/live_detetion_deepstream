@@ -13,3 +13,23 @@ spec:
   storage: {size: 100Gi}
   postgresql:
     parameters: {max_connections: "300", shared_buffers: "1GB"}
+  # 3 instances = 1 primary + 2 replicas with automatic fail-over (CloudNativePG). Spread them over different nodes.
+  affinity: {enablePodAntiAffinity: true, topologyKey: kubernetes.io/hostname}
+  # Continuous backup + point-in-time recovery to an S3-compatible bucket. Create the secret "vms-db-backup-creds"
+  # (ACCESS_KEY_ID / ACCESS_SECRET_KEY) and set the bucket below before applying.
+  backup:
+    retentionPolicy: "30d"
+    barmanObjectStore:
+      destinationPath: s3://CHANGE_ME_BUCKET/vms-db
+      s3Credentials:
+        accessKeyId: {name: vms-db-backup-creds, key: ACCESS_KEY_ID}
+        secretAccessKey: {name: vms-db-backup-creds, key: ACCESS_SECRET_KEY}
+      wal: {compression: gzip}
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: vms-db-daily
+spec:
+  schedule: "0 0 2 * * *"   # every day at 02:00 (seconds first)
+  cluster: {name: vms-db}

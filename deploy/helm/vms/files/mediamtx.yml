@@ -11,6 +11,9 @@ metricsAddress: :9998
 # the internal service token and a private source IP.
 authMethod: http
 authHTTPAddress: http://api:8000/internal/mediamtx/auth
+# MediaMTX by default does NOT ask the callback about the control API, metrics and pprof (they are exempt). Empty list =
+# nothing is exempt: the API, metrics and pprof requests are authorised like every other request (finding 4).
+authHTTPExclude: []
 
 rtsp: yes
 rtspAddress: :8554

@@ -1,22 +1,29 @@
 # API reference
 
-The machine-readable spec is in `docs/openapi.json`. Interactive docs are served at `/docs` on a running API.
+The machine-readable spec is in `docs/openapi.json`. Interactive docs are served at `/docs` on a development API only: in production (`ENVIRONMENT=production`) they are off, and the gateway returns 404 for `/docs`, `/redoc` and `/openapi.json`.
 
-Every `/api/v1` route except `POST /auth/token` needs `Authorization: Bearer <JWT>`. Roles are cumulative: `viewer` < `operator` < `admin`. Internal services can send `x-internal-token` instead of a JWT.
+Every `/api/v1` route except `POST /auth/token` needs `Authorization: Bearer <JWT>`. Roles are cumulative: `viewer` < `operator` < `admin`. There is no service-token shortcut: only a signed JWT opens the API, and the gateway removes any `x-internal-token` header from outside requests.
 
 RTSP credentials are write-only. They can be given in the URL or as `username`/`password`. They are encrypted at rest with Fernet, never returned by the API, and redacted from logs.
 
 | Method | Path | Role | Notes |
 |---|---|---|---|
-| POST | /api/v1/auth/token | - | `{username,password}` → JWT |
-| POST | /api/v1/auth/users | admin | create user `{username,password,role}` |
+| POST | /api/v1/auth/token | - | `{username,password}` → JWT. After 5 failed attempts for a user name (20 for an address) within 15 min the answer is `429` with `Retry-After`. Wrong password, unknown user and disabled user all return the same `401`. |
+| POST | /api/v1/auth/logout | viewer | this token stops working at once |
+| GET | /api/v1/auth/me | viewer | who am I |
+| POST | /api/v1/auth/password | viewer | `{current_password,new_password}`; all your tokens are revoked |
+| GET | /api/v1/auth/users | admin | list users (role, active, sites, locked) |
+| POST | /api/v1/auth/users | admin | create user `{username,password,role,sites?}` (`sites: []` = all sites) |
+| PATCH | /api/v1/auth/users/{name} | admin | change `role`, `is_active`, `password`, `sites`. Takes effect on the user's very next request. The last active admin cannot be disabled or demoted. |
+| DELETE | /api/v1/auth/users/{name} | admin | delete user |
+| POST | /api/v1/auth/users/{name}/revoke-tokens, /unlock | admin | log the user out everywhere / clear a sign-in lockout |
 | POST | /api/v1/cameras | operator | register; `id` is your camera id (e.g. `CAM_101`) |
 | POST | /api/v1/cameras/bulk | operator | up to 1,000 per call |
 | GET | /api/v1/cameras | viewer | `?status=&desired_state=&limit=&offset=` |
 | GET/PUT/DELETE | /api/v1/cameras/{id} | viewer/operator | PUT on pipeline fields bumps `config_generation`, which rebuilds only this camera's source. DELETE on a running camera returns 409 and requests a stop. |
 | POST | /api/v1/cameras/{id}/start · /stop | operator | 202; sets the desired state. Watch `status`: `SCHEDULED`, `STARTING`, `RUNNING`, `RECONNECTING`, `PENDING_CAPACITY`, `FAILED`, `STOPPED`. |
 | POST | /api/v1/cameras/{id}/models | operator | replaces the camera's model assignments (modes A/B/C, see below) |
-| GET | /api/v1/cameras/{id}/stream | viewer | HLS / WebRTC (WHEP) / RTSP URLs for `processed` and/or `raw` |
+| GET | /api/v1/cameras/{id}/stream | viewer | HLS / WebRTC (WHEP) / RTSP URLs for `processed` (and `raw` only if `ALLOW_RAW_STREAMS=true`), plus `video_token`: valid for **this camera only**, for `video_token_expires_in` seconds (default 300). Give it to the player as `Authorization: Bearer <video_token>` or `?jwt=<video_token>` and ask again before it expires. The login token is not accepted by the video server. |
 | GET | /api/v1/cameras/{id}/stream/status | viewer | MediaMTX readiness, viewer count, tracks; records `stream_sessions` |
 | GET/POST | /api/v1/models | viewer/admin | register a model, optionally with its first version |
 | GET/PUT | /api/v1/models/{id} | viewer/admin | `new_version`, `activate_version` (also used for rollback), `enabled` |
@@ -78,3 +85,13 @@ Topics:
 | `reid.events` | identity_assigned |
 
 Every topic has a `<topic>.dlq` dead-letter queue. Failed messages land there with `x-error` headers.
+
+## Tokens
+
+* Login token (`aud: vms-api`, 60 min): opens the API. It is checked against the database on **every request**: the user must exist and be active, the token must belong to the user's current *token epoch* (raised by disable, role change, password change and "revoke tokens"), and it must not be logged out.
+* Video token (`aud: vms-video`, 5 min): minted by `GET /cameras/{id}/stream`, valid for one camera, useless on the API. The video server asks the API to approve each request, so disabling a user stops their video within seconds.
+* Tokens carry `iss: vms`; a token with the wrong audience or issuer is refused.
+
+## Sites (multi-tenant)
+
+Every camera belongs to a `site` (default `default`). A user with `sites: ["siteA"]` sees only cameras, events and analytics of those sites; other cameras answer `404`. `sites: []` means all sites (the previous behaviour). Re-ID identities and behaviour totals span sites, so they are hidden from site-restricted users.

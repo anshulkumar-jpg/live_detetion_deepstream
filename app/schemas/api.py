@@ -5,6 +5,7 @@ import re
 from datetime import datetime
 from typing import Any, Literal
 
+from app.core.pipeline_guard import class_attr_problems, property_problems
 from app.core.trackers import TrackerType
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -45,12 +46,35 @@ class UserCreate(BaseModel):
     username: str = Field(min_length=3, max_length=64)
     password: str = Field(min_length=12, max_length=256)
     role: Literal["admin", "operator", "viewer"] = "viewer"
+    sites: list[str] = Field(default_factory=list)  # [] = all sites
+
+
+class UserUpdate(BaseModel):
+    role: Literal["admin", "operator", "viewer"] | None = None
+    is_active: bool | None = None
+    sites: list[str] | None = None  # sites the user may see; [] = all
+    password: str | None = Field(default=None, min_length=12, max_length=256)
+
+
+class PasswordChange(BaseModel):
+    current_password: str = Field(max_length=256)
+    new_password: str = Field(min_length=12, max_length=256)
+
+
+class UserOut(BaseModel):
+    username: str
+    role: str
+    is_active: bool
+    created_at: datetime
+    sites: list[str] = Field(default_factory=list)
+    locked: bool = False  # currently locked out after too many failed sign-ins
 
 
 # ------------------------------------------------------------------ cameras
 class CameraBase(BaseModel):
     name: str = Field(min_length=1, max_length=255)
     location: str | None = None
+    site: str = Field(default="default", min_length=1, max_length=64, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
     tags: dict[str, Any] = Field(default_factory=dict)
     width: int | None = Field(default=None, ge=16, le=8192)
     height: int | None = Field(default=None, ge=16, le=8192)
@@ -81,6 +105,7 @@ class CameraCreate(CameraBase):
 
 class CameraUpdate(BaseModel):
     name: str | None = None
+    site: str | None = Field(default=None, min_length=1, max_length=64, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
     location: str | None = None
     tags: dict[str, Any] | None = None
     rtsp_url: str | None = None
@@ -175,6 +200,17 @@ class ModelVersionIn(BaseModel):
                 raise ValueError(f"invalid nvinfer property key '{k}'")
             if isinstance(val, str) and ("\n" in val or "[" in val):
                 raise ValueError(f"invalid value for '{k}'")
+        problems = property_problems(v)  # allow-list: unknown or platform-controlled settings are refused
+        if problems:
+            raise ValueError("; ".join(problems))
+        return v
+
+    @field_validator("class_attrs")
+    @classmethod
+    def _class_attrs(cls, v: dict[str, Any]) -> dict[str, Any]:
+        problems = class_attr_problems(v)
+        if problems:
+            raise ValueError("; ".join(problems))
         return v
 
 

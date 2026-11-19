@@ -16,6 +16,7 @@ scrape_configs:
   - job_name: mtmc
     static_configs: [{targets: ["mtmc:9104"]}]
   - job_name: mediamtx
+    basic_auth: {username: metrics, password_file: /etc/prometheus/secrets/mediamtx_metrics}
     static_configs: [{targets: ["mediamtx:9998"]}]
   - job_name: kafka-exporter      # consumer lag
     static_configs: [{targets: ["kafka-exporter:9308"]}]

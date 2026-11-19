@@ -223,7 +223,7 @@ class PipelineGroup:
             parse = self._make("h264parse", f"parse_{i}", config_interval=-1)
             if self.s.stream_push_protocol == "rtmp":
                 mux = self._make("flvmux", f"flv_{i}", streamable=True)
-                q_auth = f"?user=worker&pass={self.s.internal_service_token}" if self.s.internal_service_token else ""
+                q_auth = f"?user=worker&pass={self.s.mediamtx_publish_token}" if self.s.mediamtx_publish_token else ""
                 sink = self._make("rtmpsink", f"sink_{i}",
                                   location=f"{self.s.mediamtx_rtmp_push_url}/{slot.spec['output_path']}{q_auth}",
                                   sync=False, async_=False)
@@ -232,9 +232,9 @@ class PipelineGroup:
                 sink = self._make("rtspclientsink", f"sink_{i}",
                                   location=f"{self.s.mediamtx_rtsp_push_url}/{slot.spec['output_path']}",
                                   protocols="tcp")
-                if self.s.internal_service_token:  # MediaMTX http-auth checks this on publish
+                if self.s.mediamtx_publish_token:  # MediaMTX http-auth checks this on publish
                     sink.set_property("user-id", "worker")
-                    sink.set_property("user-pw", self.s.internal_service_token)
+                    sink.set_property("user-pw", self.s.mediamtx_publish_token)
                 elems += [conv1, osd, conv2, caps, enc, parse, sink]
         else:
             elems.append(self._make("fakesink", f"sink_{i}", sync=False, async_=False))

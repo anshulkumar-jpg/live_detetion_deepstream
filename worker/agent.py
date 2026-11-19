@@ -29,8 +29,10 @@ from prometheus_client import start_http_server
 
 from app.bus.kafka import KafkaBus, KafkaConsumerLoop, ensure_topics
 from app.bus.schemas import Envelope, PipelineCommandType, Topics
+from app.core.command_auth import ReplayGuard, verify_command
 from app.core.config import Settings, get_settings
 from app.core.logging import configure_logging
+from app.core.pipeline_guard import check_source, check_spec
 from app.core.metrics import GPU, PIPE
 
 log = logging.getLogger("agent")
@@ -62,6 +64,8 @@ class NodeAgent:
         self.spawn = spawn or self._spawn_process
         self.collector = collector
         self.max_command_age_s = 300
+        self.replay = ReplayGuard()
+        self._last_reject_event = 0.0
 
     # ------------------------------------------------------------ events
     def _event(self, etype: str, payload: dict[str, Any]) -> None:
@@ -168,10 +172,33 @@ class NodeAgent:
             self._event("WORKER_FAILED", {"worker_id": wp.worker_id, "reason": f"process exited with code {code}"})
 
     # ------------------------------------------------------------ commands
+    def _reject(self, env: dict[str, Any], reason: str) -> None:
+        """Refuse a command: log it, and tell the scheduler (at most once a second, so a flood cannot flood us)."""
+        log.warning("REJECTED %s: %s", env.get("event_type"), reason)
+        now = time.monotonic()
+        if now - self._last_reject_event > 1.0:
+            self._last_reject_event = now
+            self._event("COMMAND_REJECTED", {"command": env.get("event_type"), "reason": reason[:300]})
+
     async def handle_command(self, topic: str, key: str | None, env: dict[str, Any]) -> None:
         p = env.get("payload", {})
         if p.get("node_id") != self.s.node_id:
             return
+        if not self.s.allow_unsigned_commands:
+            ok, why = verify_command(env, self.s.command_signing_key, self.s.node_id)
+            if not ok:
+                return self._reject(env, why)
+            if not self.replay.first_time(env):
+                return self._reject(env, "repeated command")
+        ct0 = env.get("event_type")
+        if ct0 in (PipelineCommandType.START_WORKER.value, PipelineCommandType.RESTART_WORKER.value):
+            problems = check_spec(p.get("spec") or {}, self.s)
+        elif ct0 == PipelineCommandType.ADD_SOURCE.value:
+            problems = check_source(p.get("source") or {}, self.s.allow_file_sources)
+        else:
+            problems = []
+        if problems:
+            return self._reject(env, "; ".join(problems))
         try:
             age = (datetime.now(timezone.utc) - datetime.fromisoformat(env["timestamp"])).total_seconds()
             if age > self.max_command_age_s:
@@ -238,7 +265,7 @@ async def main() -> None:
     s = get_settings()
     configure_logging(f"agent:{s.node_id}", s.log_level, s.log_json)
     if s.environment == "production":
-        s.validate_for_production()
+        s.validate_for_production(needs_publish_token=True, needs_command_key=not s.allow_unsigned_commands)
     start_http_server(int(os.environ.get("METRICS_PORT", "9102")))
     from app.services.gpu import NvmlCollector
 

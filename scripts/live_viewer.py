@@ -9,6 +9,7 @@ then open http://localhost:8080
 import argparse
 import json
 import os
+import re
 import threading
 import time
 import urllib.parse
@@ -16,14 +17,19 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import httpx
 
+try:
+    from scripts._tls import tls_verify
+except ImportError:  # run as "python scripts/x.py"
+    from _tls import tls_verify
+
 ap = argparse.ArgumentParser()
 ap.add_argument("--port", type=int, default=8080)
 ap.add_argument("--api", default="https://localhost:8443")
 ap.add_argument("--user", default="admin")
 a = ap.parse_args()
-client = httpx.Client(verify=False, timeout=httpx.Timeout(60, connect=10), limits=httpx.Limits(max_connections=64))
+client = httpx.Client(verify=tls_verify(), timeout=httpx.Timeout(60, connect=10), limits=httpx.Limits(max_connections=64))
 tok = {"v": None, "t": 0.0}
-lock = threading.Lock()
+lock = threading.RLock()  # video_token() calls token() while holding it
 
 
 def token() -> str:
@@ -33,6 +39,24 @@ def token() -> str:
             r.raise_for_status()
             tok["v"], tok["t"] = r.json()["access_token"], time.time()
         return tok["v"]
+
+
+vtok: dict = {}
+
+
+def video_token(path: str) -> str:
+    """Short-lived token for ONE camera's video (the full login token is not accepted by the video server)."""
+    m = re.search(r"/cam/([^/]+)/", path)
+    if not m:
+        raise ValueError("not a camera path")
+    cam = m.group(1)
+    with lock:
+        v = vtok.get(cam)
+        if not v or time.time() - v[1] > 180:  # tokens live 5 minutes by default
+            r = client.get(f"{a.api}/api/v1/cameras/{cam}/stream", headers={"Authorization": f"Bearer {token()}"})
+            r.raise_for_status()
+            v = vtok[cam] = (r.json()["video_token"], time.time())
+        return v[0]
 
 
 def cameras():
@@ -173,7 +197,7 @@ class H(BaseHTTPRequestHandler):
         if u.path.startswith("/webrtc/") and u.path.endswith("/whep"):
             body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
             try:
-                r = client.post(f"{a.api}{u.path}", params={"jwt": token()}, content=body, headers={"Content-Type": "application/sdp"})
+                r = client.post(f"{a.api}{u.path}", params={"jwt": video_token(u.path)}, content=body, headers={"Content-Type": "application/sdp"})
             except Exception as e:
                 return self.send(504, str(e).encode(), "text/plain")
             return self.send(r.status_code, r.content, "application/sdp")
@@ -189,7 +213,7 @@ class H(BaseHTTPRequestHandler):
             except Exception as e:
                 return self.send(502, str(e).encode(), "text/plain")
         if u.path.startswith("/hls/"):
-            q = [(k, v) for k, v in urllib.parse.parse_qsl(u.query) if k != "jwt"] + [("jwt", token())]
+            q = [(k, v) for k, v in urllib.parse.parse_qsl(u.query) if k != "jwt"] + [("jwt", video_token(u.path))]
             try:  # stream the answer through instead of buffering whole video segments
                 with client.stream("GET", f"{a.api}{u.path}", params=q) as r:
                     self.send_response(r.status_code)

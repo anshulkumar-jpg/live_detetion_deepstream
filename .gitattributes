@@ -1,0 +1,5 @@
+* text=auto
+*.sh text eol=lf
+*.sh.example text eol=lf
+deploy/**/*.yml text eol=lf
+Dockerfile* text eol=lf

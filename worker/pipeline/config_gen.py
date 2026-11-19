@@ -6,6 +6,7 @@ Keys follow the Gst-nvinfer configuration-file spec ([property], [class-attrs-*]
 from __future__ import annotations
 
 import os
+import posixpath
 from pathlib import Path
 from typing import Any
 
@@ -24,7 +25,7 @@ TRACKER_CONFIG_FILES = {
 def resolve(path: str | None, repo: str) -> str | None:
     if not path:
         return None
-    return path if os.path.isabs(path) else os.path.join(repo, path)
+    return path if path.startswith("/") or os.path.isabs(path) else posixpath.join(repo, path)  # container paths are POSIX
 
 
 def expected_engine_path(onnx_path: str, batch: int, gpu: int, precision: str) -> str:
@@ -45,6 +46,13 @@ def nvinfer_config(stage: dict[str, Any], gpu_id: int, repo: str, labels_path: s
 
     ``interval`` = batches the primary detector skips between runs (0 = every frame). Secondary models always run
     (their re-inference rate is secondary-reinfer-interval); the tracker runs on every frame regardless."""
+    # last line of defence: only allow-listed model settings ever reach a config file (the spec was checked before
+    # as well, this protects against any path that bypasses that check)
+    from app.core.config import get_settings
+    from app.core.pipeline_guard import check_stage
+    bad = check_stage(stage, repo, get_settings().allowed_lib_dirs)
+    if bad:
+        raise ValueError("refusing to write nvinfer config: " + "; ".join(bad))
     props: dict[str, Any] = {
         "gpu-id": gpu_id,
         "gie-unique-id": stage["gie_unique_id"],

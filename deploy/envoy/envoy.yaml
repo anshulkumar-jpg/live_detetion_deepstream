@@ -25,24 +25,59 @@ static_resources:
                   virtual_hosts:
                     - name: vms
                       domains: ["*"]
+                      # service credentials must never come in from outside: drop them at the front door
+                      request_headers_to_remove: ["x-internal-token", "x-service-token"]
                       routes:
                         - match: {prefix: "/internal/"}            # never exposed externally
                           direct_response: {status: 404}
+                        # sign-in: strict limit per gateway instance (the API also locks out failing users and addresses)
+                        - match: {path: "/api/v1/auth/token"}
+                          route: {cluster: api, timeout: 30s}
+                          typed_per_filter_config:
+                            envoy.filters.http.local_ratelimit:
+                              "@type": type.googleapis.com/envoy.extensions.filters.http.local_ratelimit.v3.LocalRateLimit
+                              stat_prefix: login_rl
+                              token_bucket: {max_tokens: 10, tokens_per_fill: 5, fill_interval: 10s}
+                              filter_enabled: {default_value: {numerator: 100, denominator: HUNDRED}}
+                              filter_enforced: {default_value: {numerator: 100, denominator: HUNDRED}}
+                              response_headers_to_add:
+                                - {header: {key: retry-after, value: "10"}}
                         - match: {prefix: "/api/"}
                           route: {cluster: api, timeout: 30s}
+                          typed_per_filter_config:
+                            envoy.filters.http.local_ratelimit:
+                              "@type": type.googleapis.com/envoy.extensions.filters.http.local_ratelimit.v3.LocalRateLimit
+                              stat_prefix: api_rl
+                              token_bucket: {max_tokens: 200, tokens_per_fill: 100, fill_interval: 1s}
+                              filter_enabled: {default_value: {numerator: 100, denominator: HUNDRED}}
+                              filter_enforced: {default_value: {numerator: 100, denominator: HUNDRED}}
                         - match: {path: "/health"}
                           route: {cluster: api}
                         - match: {path: "/ready"}
                           route: {cluster: api}
+                        # API documentation is not served through the public gateway
                         - match: {prefix: "/docs"}
-                          route: {cluster: api}
+                          direct_response: {status: 404}
+                        - match: {prefix: "/redoc"}
+                          direct_response: {status: 404}
                         - match: {prefix: "/openapi.json"}
-                          route: {cluster: api}
+                          direct_response: {status: 404}
                         - match: {prefix: "/hls/"}
                           route: {cluster: mediamtx_hls, prefix_rewrite: "/", timeout: 0s}
                         - match: {prefix: "/webrtc/"}
                           route: {cluster: mediamtx_webrtc, prefix_rewrite: "/", timeout: 0s}
+                request_timeout: 60s
+                stream_idle_timeout: 300s
                 http_filters:
+                  # request bodies are small JSON documents: refuse anything bigger than 5 MB
+                  - name: envoy.filters.http.buffer
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.buffer.v3.Buffer
+                      max_request_bytes: 5242880
+                  - name: envoy.filters.http.local_ratelimit
+                    typed_config:
+                      "@type": type.googleapis.com/envoy.extensions.filters.http.local_ratelimit.v3.LocalRateLimit
+                      stat_prefix: http_local_rate_limiter
                   - name: envoy.filters.http.router
                     typed_config: {"@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router}
   clusters:

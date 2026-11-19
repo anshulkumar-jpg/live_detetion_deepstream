@@ -15,6 +15,11 @@ from pathlib import Path
 
 import httpx
 
+try:
+    from scripts._tls import tls_verify
+except ImportError:  # run as "python scripts/x.py"
+    from _tls import tls_verify
+
 ROOT = Path(__file__).resolve().parent.parent
 API = os.environ.get("VMS_API", "https://localhost:8443")
 G, Y, R, C, D, B, X = "\033[32m", "\033[33m", "\033[31m", "\033[36m", "\033[2m", "\033[1m", "\033[0m"
@@ -71,7 +76,7 @@ def parse_selection(text: str, n: int, ids: list[str] | None = None) -> list[int
 def main() -> int:
     env = load_env()
     pw = os.environ.get("VMS_PASSWORD") or env.get("BOOTSTRAP_ADMIN_PASSWORD", "")
-    http = httpx.Client(verify=False, timeout=30)
+    http = httpx.Client(verify=tls_verify(), timeout=30)
     try:
         r = http.post(f"{API}/api/v1/auth/token", json={"username": env.get("BOOTSTRAP_ADMIN_USERNAME", "admin"), "password": pw})
         r.raise_for_status()

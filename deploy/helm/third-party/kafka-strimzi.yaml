@@ -21,9 +21,10 @@ metadata:
     strimzi.io/kraft: enabled
 spec:
   kafka:
+    # TLS + SCRAM-SHA-512 only (no plaintext listener), and per-topic ACLs enforced by the "simple" authorizer.
     listeners:
-      - {name: plain, port: 9092, type: internal, tls: false}
       - {name: tls, port: 9093, type: internal, tls: true, authentication: {type: scram-sha-512}}
+    authorization: {type: simple}
     config:
       offsets.topic.replication.factor: 3
       transaction.state.log.replication.factor: 3
@@ -33,3 +34,104 @@ spec:
       auto.create.topics.enable: false
       log.retention.hours: 24
   entityOperator: {topicOperator: {}, userOperator: {}}
+---
+# Least privilege: vms-scheduler can only touch the topics it needs (same rules as deploy/kafka/kafka-init.sh).
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaUser
+metadata:
+  name: vms-scheduler
+  labels: {strimzi.io/cluster: vms-kafka}
+spec:
+  authentication: {type: scram-sha-512}
+  authorization:
+    type: simple
+    acls:
+      - {resource: {type: topic, name: pipeline.commands, patternType: literal}, operations: [Write, Describe]}
+      - {resource: {type: topic, name: camera.status, patternType: literal}, operations: [Write, Describe]}
+      - {resource: {type: topic, name: worker.heartbeat, patternType: literal}, operations: [Read, Describe]}
+      - {resource: {type: topic, name: pipeline.events, patternType: literal}, operations: [Read, Describe]}
+      - {resource: {type: topic, name: worker.heartbeat.dlq, patternType: literal}, operations: [Write, Describe]}
+      - {resource: {type: topic, name: pipeline.events.dlq, patternType: literal}, operations: [Write, Describe]}
+      - {resource: {type: group, name: scheduler, patternType: literal}, operations: [Read]}
+---
+# Least privilege: vms-agent can only touch the topics it needs (same rules as deploy/kafka/kafka-init.sh).
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaUser
+metadata:
+  name: vms-agent
+  labels: {strimzi.io/cluster: vms-kafka}
+spec:
+  authentication: {type: scram-sha-512}
+  authorization:
+    type: simple
+    acls:
+      - {resource: {type: topic, name: pipeline.commands, patternType: literal}, operations: [Read, Describe]}
+      - {resource: {type: topic, name: pipeline.commands.dlq, patternType: literal}, operations: [Write, Describe]}
+      - {resource: {type: topic, name: pipeline.events, patternType: literal}, operations: [Write, Describe]}
+      - {resource: {type: topic, name: worker.heartbeat, patternType: literal}, operations: [Write, Describe]}
+      - {resource: {type: topic, name: pipeline.metrics, patternType: literal}, operations: [Write, Describe]}
+      - {resource: {type: topic, name: detection.events, patternType: literal}, operations: [Write, Describe]}
+      - {resource: {type: topic, name: embedding.events, patternType: literal}, operations: [Write, Describe]}
+      - {resource: {type: group, name: agent-, patternType: prefix}, operations: [Read]}
+---
+# Least privilege: vms-analytics can only touch the topics it needs (same rules as deploy/kafka/kafka-init.sh).
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaUser
+metadata:
+  name: vms-analytics
+  labels: {strimzi.io/cluster: vms-kafka}
+spec:
+  authentication: {type: scram-sha-512}
+  authorization:
+    type: simple
+    acls:
+      - {resource: {type: topic, name: detection.events, patternType: literal}, operations: [Read, Describe]}
+      - {resource: {type: topic, name: detection.events.dlq, patternType: literal}, operations: [Write, Describe]}
+      - {resource: {type: topic, name: analytics.events, patternType: literal}, operations: [Write, Describe]}
+      - {resource: {type: group, name: analytics-stream, patternType: literal}, operations: [Read]}
+---
+# Least privilege: vms-mtmc can only touch the topics it needs (same rules as deploy/kafka/kafka-init.sh).
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaUser
+metadata:
+  name: vms-mtmc
+  labels: {strimzi.io/cluster: vms-kafka}
+spec:
+  authentication: {type: scram-sha-512}
+  authorization:
+    type: simple
+    acls:
+      - {resource: {type: topic, name: embedding.events, patternType: literal}, operations: [Read, Describe]}
+      - {resource: {type: topic, name: embedding.events.dlq, patternType: literal}, operations: [Write, Describe]}
+      - {resource: {type: topic, name: reid.events, patternType: literal}, operations: [Write, Describe]}
+      - {resource: {type: group, name: mtmc, patternType: literal}, operations: [Read]}
+---
+# Least privilege: vms-api can only touch the topics it needs (same rules as deploy/kafka/kafka-init.sh).
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaUser
+metadata:
+  name: vms-api
+  labels: {strimzi.io/cluster: vms-kafka}
+spec:
+  authentication: {type: scram-sha-512}
+  authorization:
+    type: simple
+    acls:
+      - {resource: {type: topic, name: camera.status, patternType: literal}, operations: [Write, Describe]}
+---
+# Least privilege: vms-logstash can only touch the topics it needs (same rules as deploy/kafka/kafka-init.sh).
+apiVersion: kafka.strimzi.io/v1beta2
+kind: KafkaUser
+metadata:
+  name: vms-logstash
+  labels: {strimzi.io/cluster: vms-kafka}
+spec:
+  authentication: {type: scram-sha-512}
+  authorization:
+    type: simple
+    acls:
+      - {resource: {type: topic, name: detection.events, patternType: literal}, operations: [Read, Describe]}
+      - {resource: {type: topic, name: analytics.events, patternType: literal}, operations: [Read, Describe]}
+      - {resource: {type: topic, name: reid.events, patternType: literal}, operations: [Read, Describe]}
+      - {resource: {type: topic, name: pipeline.events, patternType: literal}, operations: [Read, Describe]}
+      - {resource: {type: group, name: logstash-es, patternType: literal}, operations: [Read]}

@@ -13,16 +13,23 @@ from app.db.models import AnalyticsEvent, Camera, DetectionEvent, ReidAssociatio
 router = APIRouter(tags=["analytics"])
 
 
+def _site_cams(who: Principal):
+    """Sub-query of the camera ids a site-restricted user may see (None for users who see every site)."""
+    return select(Camera.id).where(Camera.site.in_(who.sites)) if who.sites else None
+
+
 def _since(hours: int) -> datetime:
     return datetime.now(timezone.utc) - timedelta(hours=hours)
 
 
 @router.get("/events")
-async def list_events(db: AsyncSession = Depends(get_session), _: Principal = Depends(viewer),
+async def list_events(db: AsyncSession = Depends(get_session), who: Principal = Depends(viewer),
                       camera_id: str | None = None, class_name: str | None = None, model_id: str | None = None,
                       since: datetime | None = None, until: datetime | None = None,
                       limit: int = Query(100, ge=1, le=1000), offset: int = Query(0, ge=0)):
     conds = []
+    if (sc := _site_cams(who)) is not None:
+        conds.append(DetectionEvent.camera_id.in_(sc))
     if camera_id:
         conds.append(DetectionEvent.camera_id == camera_id)
     if class_name:
@@ -45,15 +52,18 @@ async def list_events(db: AsyncSession = Depends(get_session), _: Principal = De
 
 
 @router.get("/analytics/summary")
-async def summary(db: AsyncSession = Depends(get_session), _: Principal = Depends(viewer),
+async def summary(db: AsyncSession = Depends(get_session), who: Principal = Depends(viewer),
                   hours: int = Query(24, ge=1, le=24 * 30)):
     since = _since(hours)
+    sc = _site_cams(who)
+    scope = DetectionEvent.camera_id.in_(sc) if sc is not None else True
     by_class = (await db.execute(select(DetectionEvent.class_name, func.count()).where(
-        DetectionEvent.last_seen >= since).group_by(DetectionEvent.class_name))).all()
+        DetectionEvent.last_seen >= since, scope).group_by(DetectionEvent.class_name))).all()
     by_cam = (await db.execute(select(DetectionEvent.camera_id, func.count()).where(
-        DetectionEvent.last_seen >= since).group_by(DetectionEvent.camera_id)
+        DetectionEvent.last_seen >= since, scope).group_by(DetectionEvent.camera_id)
         .order_by(func.count().desc()).limit(20))).all()
-    by_status = (await db.execute(select(Camera.status, func.count()).group_by(Camera.status))).all()
+    by_status = (await db.execute(select(Camera.status, func.count()).where(Camera.site.in_(who.sites) if who.sites else True)
+                                  .group_by(Camera.status))).all()
     identities = (await db.execute(select(func.count(func.distinct(ReidAssociation.global_id))).where(
         ReidAssociation.last_seen >= since))).scalar()
     multi_cam = (await db.execute(select(func.count()).select_from(
@@ -62,6 +72,9 @@ async def summary(db: AsyncSession = Depends(get_session), _: Principal = Depend
         .subquery()))).scalar()
     behaviors = (await db.execute(select(AnalyticsEvent.event_type, func.count()).where(
         AnalyticsEvent.ts >= since).group_by(AnalyticsEvent.event_type))).all()
+    if who.sites:  # identities and behaviours span cameras of every site: not shown to a site-restricted user
+        identities = multi_cam = None
+        behaviors = []
     return {"window_hours": hours,
             "tracks_by_class": {k or "unknown": v for k, v in by_class},
             "top_cameras_by_tracks": [{"camera_id": c, "tracks": n} for c, n in by_cam],
@@ -71,9 +84,10 @@ async def summary(db: AsyncSession = Depends(get_session), _: Principal = Depend
 
 
 @router.get("/analytics/cameras/{camera_id}")
-async def camera_analytics(camera_id: str, db: AsyncSession = Depends(get_session), _: Principal = Depends(viewer),
+async def camera_analytics(camera_id: str, db: AsyncSession = Depends(get_session), who: Principal = Depends(viewer),
                            hours: int = Query(24, ge=1, le=24 * 30)):
-    if await db.get(Camera, camera_id) is None:
+    cam = await db.get(Camera, camera_id)
+    if cam is None or not who.can_see_site(cam.site):
         raise HTTPException(404, "camera not found")
     since = _since(hours)
     base = and_(DetectionEvent.camera_id == camera_id, DetectionEvent.last_seen >= since)

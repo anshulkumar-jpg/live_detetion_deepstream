@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import shutil
 import socket
 import subprocess
 import sys
@@ -20,6 +19,11 @@ import webbrowser
 from pathlib import Path
 
 import httpx
+
+try:
+    from scripts._tls import tls_verify
+except ImportError:  # run as "python scripts/x.py"
+    from _tls import tls_verify
 
 ROOT = Path(__file__).resolve().parent.parent
 CORE = ["postgres", "kafka", "migrate", "api", "scheduler", "mediamtx", "envoy", "analytics-stream", "gpu-agent"]
@@ -69,7 +73,7 @@ def ensure_docker() -> None:
 class Api:
     def __init__(self, base: str, user: str, password: str) -> None:
         self.base = base
-        self.http = httpx.Client(verify=False, timeout=30)
+        self.http = httpx.Client(verify=tls_verify(), timeout=30)
         self.user, self.password = user, password
         self.token = ""
 
@@ -102,6 +106,38 @@ def cameras(api: Api) -> list[dict]:
 
 
 LABELS: dict[str, list[str]] = {}
+
+
+_reach_cache: dict[tuple[str, int], tuple[float, bool]] = {}
+
+
+def _cam_host(c: dict):
+    """(ip, port) of the camera's RTSP address, or None."""
+    import re as _re
+    m = _re.match(r"rtsps?://(?:[^@/]*@)?([^:/]+)(?::(\d+))?", c.get("rtsp_url") or "")
+    return (m.group(1), int(m.group(2) or 554)) if m else None
+
+
+def _reachable(ip: str, port: int) -> bool:
+    """Plain TCP connect (no login), cached for 10 s."""
+    now = time.time()
+    hit = _reach_cache.get((ip, port))
+    if hit and now - hit[0] < 10:
+        return hit[1]
+    with socket.socket() as s:
+        s.settimeout(0.8)
+        ok = s.connect_ex((ip, port)) == 0
+    _reach_cache[(ip, port)] = (now, ok)
+    return ok
+
+
+def _my_ip() -> str:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("10.255.255.255", 1))  # sends nothing; only picks the outgoing interface
+            return s.getsockname()[0]
+    except Exception:
+        return "unknown"
 
 
 def model_text(c: dict) -> str:
@@ -152,7 +188,8 @@ def show(api: Api, viewer_port: int) -> int:
             pass
     stats = worker_stats(api)
     running = sum(1 for c in cams if c["status"] == "RUNNING")
-    print("\033[2J\033[H" if os.name != "nt" else "", end="")
+    if sys.stdout.isatty():  # redraw in place (Windows 10+ terminals understand this too; see os.system("") above)
+        print("\033[H\033[2J", end="")
     print(f"{B}=== DeepStream VMS  |  cameras live: {running}/{len(cams)} ==={X}")
     print(f"{D}{gpu_line(api)}{X}\n")
     print(f"{B}{'CAMERA':<11} {'STATUS':<9} {'MODEL RUNNING':<40} {'DETECTION':<16} {'TRACKER':<11}{'FPS':>4} {'LAG':>5}  WORKER{X}")
@@ -171,6 +208,12 @@ def show(api: Api, viewer_port: int) -> int:
         print(f"{c['id']:<11} {col}{st:<9}{X} {model_text(c):<40} {det:<16} {trk:<11}{fps:>4} {lat:>5}  {s.get('worker', '-')}")
         if st not in ("RUNNING", "STOPPED") and c.get("status_reason"):
             print(f"{'':<11} {D}{c['status_reason']}{X}")
+    waiting = [c for c in cams if c["status"] != "RUNNING"]
+    if waiting:  # tell the user plainly when the cameras cannot even be reached from this PC
+        bad = sorted({h for h in (_cam_host(c) for c in waiting) if h and not _reachable(*h)})
+        for ip, port in bad:
+            print(f"\n{Y}!! Cannot reach the camera/NVR at {ip}:{port} from this PC (this PC is {_my_ip()}).{X}")
+            print(f"{Y}   Connect this PC to the same network as the cameras (usually 192.168.x.x with the same x as {ip.rsplit('.', 1)[0]}.*).{X}")
     print(f"\n{B}Live video (all cameras):{X} http://localhost:{viewer_port}")
     return running
 

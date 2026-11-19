@@ -4,10 +4,10 @@
 
 1. Install the NVIDIA driver and the NVIDIA Container Toolkit. Check that `docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi` works.
 2. Log in to NGC: `docker login nvcr.io` (username `$oauthtoken`, password = your NGC API key).
-3. `cp .env.example .env`, then generate the secrets as described in the file.
+3. `python scripts/vms.py init` creates `.env` from `.env.example`, generates every secret that is still `CHANGE_ME` (JWT, Fernet key, command-signing key, publish token, database, Elasticsearch, admin password) and the Kafka / MediaMTX security files. It never overwrites an existing value, and works on Windows, Linux and macOS.
 4. Put your model files in `./models`, matching the paths in `config/models/models.yaml`. The folder must be writable, because nvinfer caches the TensorRT engines it builds there.
 5. Put a TLS certificate and key at `deploy/envoy/certs/tls.crt` and `tls.key`.
-6. `docker compose build && docker compose up -d`. Add `--profile analytics --profile monitoring` for MTMC, Milvus, ELK, Prometheus and Grafana.
+6. `python scripts/vms.py up --build` (add `--analytics --monitoring`, or `--all`), or directly `docker compose build && docker compose up -d`. Other commands: `vms.py status`, `logs`, `down`, `run` (start cameras and the live viewer), `rotate-key`. The `*.bat` files still work on Windows.
 7. Validate the GPU, then benchmark, then register models (README, steps 1–3).
 
 **DeepStream image and pyds version.** `docker/Dockerfile.worker` defaults to `nvcr.io/nvidia/deepstream:7.1-triton-multiarch` and the pyds v1.2.0 wheel (cp310). If your driver needs another DeepStream release, override both:
@@ -26,7 +26,7 @@ docker compose build --build-arg DS_IMAGE=... --build-arg PYDS_WHEEL_URL=... gpu
 
 Kibana, Prometheus and Grafana are bound to localhost only.
 
-**WebRTC from outside the host.** Set `webrtcAdditionalHosts` in `deploy/mediamtx/mediamtx.yml` to the server's reachable IP or name.
+**WebRTC from outside the host.** Set `WEBRTC_ADDITIONAL_HOSTS` in `.env` (comma separated, e.g. `127.0.0.1,localhost,10.0.0.5`) to the address(es) browsers use to reach this server. No machine-specific address is committed.
 
 ## 2. Kubernetes (multi-GPU / multi-node ready)
 
@@ -51,7 +51,7 @@ Stateful dependencies use upstream operators and charts. Their manifests and val
 ```bash
 kubectl create ns vms
 kubectl -n vms create secret generic vms-secrets --from-literal=DATABASE_URL=... --from-literal=JWT_SECRET=... \
-  --from-literal=CREDENTIAL_ENCRYPTION_KEY=... --from-literal=INTERNAL_SERVICE_TOKEN=... --from-literal=BOOTSTRAP_ADMIN_PASSWORD=...
+  --from-literal=CREDENTIAL_ENCRYPTION_KEY=... --from-literal=MEDIAMTX_PUBLISH_TOKEN=... --from-literal=BOOTSTRAP_ADMIN_PASSWORD=...
 helm install vms deploy/helm/vms -n vms -f my-values.yaml
 ```
 
@@ -69,10 +69,18 @@ helm install vms deploy/helm/vms -n vms -f my-values.yaml
 - RTSP credentials are Fernet-encrypted in PostgreSQL. Workers decrypt them in memory, and logs redact `user:pass@` from URLs.
 - JWT with RBAC (admin, operator, viewer). Every write is recorded in `audit_logs`.
 - Envoy terminates TLS (TLS 1.2 minimum) and blocks `/internal/*` from outside.
+- There is no shared "internal admin token". Each service has its own secret with one purpose: `COMMAND_SIGNING_KEY` (scheduler signs, GPU agents verify), `MEDIAMTX_PUBLISH_TOKEN` (workers publish video, nothing else), `MEDIAMTX_API_PASSWORD` (API and scheduler call the MediaMTX control API), `MEDIAMTX_METRICS_PASSWORD` (Prometheus), and one Kafka login per service. Envoy removes `x-internal-token` / `x-service-token` from outside requests, and the API ignores them anyway.
 - MediaMTX uses `authMethod: http`:
-  - reading a stream requires a platform JWT
-  - publishing requires a private source IP and the internal token
-- For Kafka across hosts, set `KAFKA_SECURITY_PROTOCOL=SASL_SSL` and the SASL variables. The Strimzi manifest defines a SCRAM-authenticated TLS listener.
+  - reading a stream requires a **camera-scoped video token** (5 min, see docs/API.md), re-checked against the user database on each request
+  - publishing requires user `worker`, the publish token, a private source IP and the path `cam/<id>/processed`
+  - the control API (port 9997) and metrics need their own logins; `pprof` is refused. Camera passwords are not written into MediaMTX: raw streams (which would) are off unless `ALLOW_RAW_STREAMS=true`.
+- GPU nodes only run **signed** commands (HMAC-SHA256; node id and expiry are inside the signature; replays are refused) and refuse any model setting outside an allow-list. `custom-lib-path` must be inside `/opt/vms/lib`, which is built into the image.
+- Elasticsearch has security on (`ELASTIC_PASSWORD`; Kibana and Logstash have their own logins, and Logstash can only write `vms-*`). etcd and Milvus are reachable only inside the compose network (no published ports). RTSP (8554) is published on `127.0.0.1` only.
+- Envoy: TLS 1.2+, 5 MB request-body limit, local rate limits (strict on `/auth/token`), `/docs` and `/openapi.json` closed.
+- Rotation of every key: `docs/SECRETS.md`. Data retention: `docs/DATA_RETENTION.md`.
+- Docker Compose: Kafka is already secured (TLS + SCRAM logins + per-topic permissions). Run `python scripts/make_kafka_security.py` once; it creates the certificates in `deploy/kafka/certs/` and one password per service in `.env` (`start_services.bat` does this on the first start). The broker's `deploy/kafka/kafka-init.sh` creates the logins and permissions every time it starts, so the first start of Kafka takes about a minute longer.
+- Every GPU node needs `COMMAND_SIGNING_KEY` (the same value as the scheduler) and `MEDIAMTX_PUBLISH_TOKEN`. Use at least 32 and 24 random characters.
+- Kubernetes / several hosts: set `KAFKA_SECURITY_PROTOCOL=SASL_SSL` and the SASL variables per service. The Strimzi manifest defines a SCRAM-authenticated TLS listener; give each service its own user and grant it only the topics it needs (see `deploy/kafka/kafka-init.sh` for the exact list).
 - Containers: the API image runs as non-root. The Helm chart sets `runAsNonRoot`, a read-only root filesystem and drops all capabilities. The GPU agent needs the NVIDIA runtime.
 
 ## 4. Operations

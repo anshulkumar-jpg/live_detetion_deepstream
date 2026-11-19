@@ -3,7 +3,7 @@ image:
   worker: {repository: registry.example.com/vms-worker, tag: "1.0.0", pullPolicy: IfNotPresent}
 imagePullSecrets: []
 
-# Secret with keys: DATABASE_URL, JWT_SECRET, CREDENTIAL_ENCRYPTION_KEY, INTERNAL_SERVICE_TOKEN,
+# Secret with keys: DATABASE_URL, JWT_SECRET, CREDENTIAL_ENCRYPTION_KEY, MEDIAMTX_PUBLISH_TOKEN,
 # BOOTSTRAP_ADMIN_PASSWORD (+ KAFKA_SASL_PASSWORD, MILVUS_TOKEN if used). Create it out-of-band
 # (sealed-secrets / external-secrets / kubectl). The chart never stores secrets in values.
 existingSecret: vms-secrets

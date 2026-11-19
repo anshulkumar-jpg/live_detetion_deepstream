@@ -29,14 +29,32 @@ class Settings(BaseSettings):
     # ---- security -------------------------------------------------------
     jwt_secret: str = Field(default="", description="HS256 signing secret")
     jwt_algorithm: str = "HS256"
+    # key rotation: the previous signing secret is still accepted (to verify only) until old tokens have expired
+    jwt_secret_previous: str = ""
     jwt_expire_minutes: int = 60
+    video_token_ttl_s: int = 300  # camera-scoped video tokens live this long (a player asks for a new one)
+    # sign-in protection: a user name is locked after this many failures within the window, a client address after more
+    login_max_failures_per_user: int = 5
+    login_max_failures_per_ip: int = 20
+    login_window_s: int = 900
+    login_lockout_s: int = 900
     # Fernet key (urlsafe base64, 32 bytes) used to encrypt RTSP credentials at rest
     credential_encryption_key: str = ""
+    # comma-separated older keys, only used to decrypt until scripts/rotate_credentials.py has re-encrypted everything
+    credential_encryption_keys_old: str = ""
     # bootstrap admin, created on first start only if no users exist
     bootstrap_admin_username: str = "admin"
     bootstrap_admin_password: str = ""
-    # token used by internal services (scheduler, agents) for /internal calls
-    internal_service_token: str = ""
+    # Password DeepStream workers use to publish video to MediaMTX. It can publish and do nothing else; it is only
+    # given to the API (to check it) and the GPU agent (to use it), not to every service.
+    mediamtx_publish_token: str = ""
+    # HMAC key for pipeline commands: the scheduler signs them, GPU agents check them. Nobody else holds it.
+    command_signing_key: str = ""
+    command_ttl_s: int = 60  # how long a signed command stays valid (max 300)
+    allow_unsigned_commands: bool = False  # development only: accept and send commands without a signature
+    # shared libraries a model may load (custom-lib-path). Keep this folder out of the writable models volume.
+    allowed_lib_dirs: list[str] = ["/opt/vms/lib"]
+    allow_file_sources: bool = False  # file:// camera sources (benchmarks only)
     cors_origins: list[str] = []
 
     # ---- kafka ----------------------------------------------------------
@@ -98,8 +116,12 @@ class Settings(BaseSettings):
 
     # ---- video plane ----------------------------------------------------
     mediamtx_api_url: str = "http://localhost:9997"
-    mediamtx_api_user: str = ""
+    mediamtx_api_user: str = "vms-api"  # login the API and scheduler use for the MediaMTX control API
     mediamtx_api_password: str = ""
+    mediamtx_metrics_password: str = ""  # login (user "metrics") Prometheus uses to read MediaMTX metrics
+    # Raw (un-annotated) camera streams make MediaMTX pull the camera itself, which puts the camera password into
+    # the video server. Off by default; annotated streams (published by the workers) need no camera password.
+    allow_raw_streams: bool = False
     mediamtx_rtsp_push_url: str = "rtsp://localhost:8554"
     mediamtx_public_hls_url: str = "http://localhost:8888"
     mediamtx_public_webrtc_url: str = "http://localhost:8889"
@@ -117,6 +139,11 @@ class Settings(BaseSettings):
     mtmc_time_window_s: int = 600
     mtmc_min_track_samples: int = 3
     embedding_retention_days: int = 7
+    # retention of personal / behavioural data in PostgreSQL (days; 0 = keep forever). See app/services/retention.py
+    detection_event_retention_days: int = 30
+    reid_retention_days: int = 7  # cross-camera identities: keep as short as the embeddings
+    analytics_event_retention_days: int = 30
+    audit_retention_days: int = 365
     elasticsearch_url: str = ""
     elasticsearch_index_prefix: str = "vms-detections"
 
@@ -127,16 +154,30 @@ class Settings(BaseSettings):
             raise ValueError("cameras_per_worker must be >= 1")
         return v
 
-    def validate_for_production(self) -> None:
-        missing = [
-            name
-            for name in ("jwt_secret", "credential_encryption_key", "internal_service_token")
-            if not getattr(self, name)
-        ]
+    def validate_for_production(self, needs_publish_token: bool = False, needs_command_key: bool = False,
+                                needs_mediamtx_api: bool = False, needs_mediamtx_metrics: bool = False) -> None:
+        required = ["jwt_secret", "credential_encryption_key"]
+        if needs_command_key:
+            required.append("command_signing_key")
+        if needs_mediamtx_api:
+            required.append("mediamtx_api_password")
+        if needs_mediamtx_metrics:
+            required.append("mediamtx_metrics_password")
+        if needs_publish_token:
+            required.append("mediamtx_publish_token")
+        missing = [name for name in required if not getattr(self, name)]
         if missing:
-            raise RuntimeError(f"Missing required secrets: {', '.join(missing)}")
+            raise RuntimeError(f"Missing required secrets: {', '.join(missing).upper()}")
         if len(self.jwt_secret) < 32:
             raise RuntimeError("JWT_SECRET must be at least 32 characters")
+        if needs_publish_token and len(self.mediamtx_publish_token) < 24:
+            raise RuntimeError("MEDIAMTX_PUBLISH_TOKEN must be at least 24 characters")
+        if needs_command_key and len(self.command_signing_key) < 32:
+            raise RuntimeError("COMMAND_SIGNING_KEY must be at least 32 characters")
+        if needs_mediamtx_api and len(self.mediamtx_api_password) < 24:
+            raise RuntimeError("MEDIAMTX_API_PASSWORD must be at least 24 characters")
+        if needs_mediamtx_metrics and len(self.mediamtx_metrics_password) < 24:
+            raise RuntimeError("MEDIAMTX_METRICS_PASSWORD must be at least 24 characters")
 
     def topic(self, name: str) -> str:
         return f"{self.kafka_topic_prefix}{name}"

@@ -21,7 +21,13 @@ RUN pip3 install --ignore-installed -r requirements-worker.txt && pip3 install "
 # YOLO bbox parser for nvinfer (expects output [B, N, 6] = x1,y1,x2,y2,score,class; see scripts/onnx_add_yolo_decode.py).
 # Built from the open-source marcoslucianops/DeepStream-Yolo repo.
 ARG CUDA_VER=12.8
-RUN git clone --depth 1 https://github.com/marcoslucianops/DeepStream-Yolo /tmp/dsyolo \
+# Pinned to an exact commit so every build gets the same source (update it deliberately, after review).
+ARG DSYOLO_COMMIT=2894babce8e75c49115dbe0c7b516289ed853565
+RUN git init -q /tmp/dsyolo \
+    && git -C /tmp/dsyolo remote add origin https://github.com/marcoslucianops/DeepStream-Yolo \
+    && git -C /tmp/dsyolo fetch -q --depth 1 origin "${DSYOLO_COMMIT}" \
+    && git -C /tmp/dsyolo checkout -q FETCH_HEAD \
+    && test "$(git -C /tmp/dsyolo rev-parse HEAD)" = "${DSYOLO_COMMIT}" \
     && CUDA_VER=${CUDA_VER} make -C /tmp/dsyolo/nvdsinfer_custom_impl_Yolo \
     && mkdir -p /opt/vms/lib \
     && cp /tmp/dsyolo/nvdsinfer_custom_impl_Yolo/libnvdsinfer_custom_impl_Yolo.so /opt/vms/lib/ \

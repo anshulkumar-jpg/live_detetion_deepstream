@@ -15,7 +15,7 @@
 1. **Real-time source.** Loop a representative clip into MediaMTX so decoding runs at camera pace:
 
    ```bash
-   ffmpeg -re -stream_loop -1 -i your_clip_1080p.mp4 -c copy -f rtsp rtsp://worker:$INTERNAL_SERVICE_TOKEN@mediamtx:8554/bench/clip
+   ffmpeg -re -stream_loop -1 -i your_clip_1080p.mp4 -c copy -f rtsp rtsp://worker:$MEDIAMTX_PUBLISH_TOKEN@mediamtx:8554/bench/clip
    ```
 
    Use clips at your real camera resolutions and codecs, with H.264 and H.265 tested separately. A `file://` URI only measures raw decode throughput.

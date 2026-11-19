@@ -12,7 +12,7 @@ from sqlalchemy.orm import selectinload
 
 from app.api.deps import Principal, audit, get_session, get_streams, operator, viewer
 from app.core.config import Settings, get_settings
-from app.core.security import get_cipher, strip_credentials
+from app.core.security import create_video_token, get_cipher, strip_credentials
 from app.db.models import (
     Camera,
     CameraModelAssignment,
@@ -41,6 +41,13 @@ _PIPELINE_FIELDS = {"rtsp_url", "username", "password", "tracking_enabled", "tra
                     "detection_interval"}
 
 
+def _raw_guard(mode, settings: Settings) -> None:
+    from app.db.models import StreamMode
+    if StreamMode(mode) in (StreamMode.RAW, StreamMode.BOTH) and not settings.allow_raw_streams:
+        raise HTTPException(422, "raw camera streams are disabled because they put the camera password into the video "
+                                 "server; use stream_mode 'annotated', or set ALLOW_RAW_STREAMS=true to allow raw")
+
+
 async def _worker_map(db: AsyncSession, ids: list[str]) -> dict[str, str]:
     if not ids:
         return {}
@@ -51,7 +58,7 @@ async def _worker_map(db: AsyncSession, ids: list[str]) -> dict[str, str]:
 
 def to_out(cam: Camera, worker_id: str | None = None) -> CameraOut:
     return CameraOut(
-        id=cam.id, name=cam.name, location=cam.location, tags=cam.tags or {}, width=cam.width, height=cam.height,
+        id=cam.id, name=cam.name, location=cam.location, site=cam.site, tags=cam.tags or {}, width=cam.width, height=cam.height,
         fps=cam.fps, codec_hint=cam.codec_hint, tracking_enabled=cam.tracking_enabled, tracker_type=cam.tracker_type,
         detection_interval=cam.detection_interval or 0,
         execution_strategy=cam.execution_strategy, stream_mode=cam.stream_mode, rtsp_url=cam.rtsp_url,
@@ -62,24 +69,35 @@ def to_out(cam: Camera, worker_id: str | None = None) -> CameraOut:
     )
 
 
-def _new_camera(body: CameraCreate, settings: Settings) -> Camera:
+def _new_camera(body: CameraCreate, settings: Settings, who: Principal | None = None) -> Camera:
+    _raw_guard(body.stream_mode, settings)
+    if who is not None and not who.can_see_site(body.site):
+        raise HTTPException(403, f"you may not create cameras in site '{body.site}'")
     clean, url_user, url_pass = strip_credentials(body.rtsp_url)
     cipher = get_cipher(settings)
     return Camera(
         id=body.id, name=body.name, rtsp_url=clean,
         username_enc=cipher.encrypt(body.username or url_user), password_enc=cipher.encrypt(body.password or url_pass),
-        location=body.location, tags=body.tags, width=body.width, height=body.height, fps=body.fps,
+        location=body.location, site=body.site, tags=body.tags, width=body.width, height=body.height, fps=body.fps,
         codec_hint=body.codec_hint, tracking_enabled=body.tracking_enabled, tracker_type=body.tracker_type,
         detection_interval=body.detection_interval, execution_strategy=body.execution_strategy, stream_mode=body.stream_mode,
         desired_state=DesiredState.STOPPED, status=CameraStatus.REGISTERED,
     )
 
 
-async def _get(db: AsyncSession, camera_id: str) -> Camera:
+def _site_ok(cam: Camera, who: Principal) -> None:
+    """A user restricted to some sites cannot see cameras of other sites (404, not 403: do not reveal they exist)."""
+    if not who.can_see_site(cam.site):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"camera '{cam.id}' not found")
+
+
+async def _get(db: AsyncSession, camera_id: str, who: Principal | None = None) -> Camera:
     cam = (await db.execute(select(Camera).options(selectinload(Camera.assignments)).where(Camera.id == camera_id)
                             .execution_options(populate_existing=True))).scalar_one_or_none()
     if cam is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, f"camera '{camera_id}' not found")
+    if who is not None:
+        _site_ok(cam, who)
     return cam
 
 
@@ -88,7 +106,7 @@ async def create_camera(body: CameraCreate, request: Request, db: AsyncSession =
                         who: Principal = Depends(operator), settings: Settings = Depends(get_settings)):
     if await db.get(Camera, body.id) is not None:
         raise HTTPException(status.HTTP_409_CONFLICT, f"camera '{body.id}' already exists")
-    cam = _new_camera(body, settings)
+    cam = _new_camera(body, settings, who)
     db.add(cam)
     audit(db, request, who, "camera.create", "camera", cam.id, {"name": cam.name})
     await db.commit()
@@ -105,19 +123,21 @@ async def bulk_create(body: CameraBulkCreate, request: Request, db: AsyncSession
     if existing:
         raise HTTPException(status.HTTP_409_CONFLICT, f"already exist: {sorted(existing)[:20]}")
     for c in body.cameras:
-        db.add(_new_camera(c, settings))
+        db.add(_new_camera(c, settings, who))
     audit(db, request, who, "camera.bulk_create", "camera", None, {"count": len(ids)})
     await db.commit()
     return {"created": len(ids)}
 
 
 @router.get("", response_model=Page)
-async def list_cameras(db: AsyncSession = Depends(get_session), _: Principal = Depends(viewer),
+async def list_cameras(db: AsyncSession = Depends(get_session), who: Principal = Depends(viewer),
                        status_: CameraStatus | None = Query(None, alias="status"),
                        desired_state: DesiredState | None = None,
                        limit: int = Query(100, ge=1, le=1000), offset: int = Query(0, ge=0)):
     q = select(Camera)
     cq = select(func.count()).select_from(Camera)
+    if who.sites:  # site-restricted user: only their sites
+        q, cq = q.where(Camera.site.in_(who.sites)), cq.where(Camera.site.in_(who.sites))
     if status_ is not None:
         q, cq = q.where(Camera.status == status_), cq.where(Camera.status == status_)
     if desired_state is not None:
@@ -129,16 +149,20 @@ async def list_cameras(db: AsyncSession = Depends(get_session), _: Principal = D
 
 
 @router.get("/{camera_id}", response_model=CameraOut)
-async def get_camera(camera_id: str, db: AsyncSession = Depends(get_session), _: Principal = Depends(viewer)):
-    cam = await _get(db, camera_id)
+async def get_camera(camera_id: str, db: AsyncSession = Depends(get_session), who: Principal = Depends(viewer)):
+    cam = await _get(db, camera_id, who)
     return to_out(cam, (await _worker_map(db, [cam.id])).get(cam.id))
 
 
 @router.put("/{camera_id}", response_model=CameraOut)
 async def update_camera(camera_id: str, body: CameraUpdate, request: Request, db: AsyncSession = Depends(get_session),
                         who: Principal = Depends(operator), settings: Settings = Depends(get_settings)):
-    cam = await _get(db, camera_id)
+    cam = await _get(db, camera_id, who)
     data = body.model_dump(exclude_unset=True)
+    if data.get("stream_mode") is not None:
+        _raw_guard(data["stream_mode"], settings)
+    if data.get("site") is not None and not who.can_see_site(data["site"]):
+        raise HTTPException(403, f"you may not move cameras into site '{data['site']}'")
     cipher = get_cipher(settings)
     if "rtsp_url" in data:
         clean, u, p = strip_credentials(data.pop("rtsp_url"))
@@ -163,7 +187,7 @@ async def update_camera(camera_id: str, body: CameraUpdate, request: Request, db
 @router.delete("/{camera_id}", status_code=202)
 async def delete_camera(camera_id: str, request: Request, db: AsyncSession = Depends(get_session),
                         who: Principal = Depends(operator)):
-    cam = await _get(db, camera_id)
+    cam = await _get(db, camera_id, who)
     active = (await db.execute(select(func.count()).select_from(WorkerCameraAssignment).where(and_(
         WorkerCameraAssignment.camera_id == cam.id, WorkerCameraAssignment.released_at.is_(None))))).scalar()
     if active:
@@ -181,7 +205,7 @@ async def delete_camera(camera_id: str, request: Request, db: AsyncSession = Dep
 @router.post("/{camera_id}/start", response_model=CameraOut, status_code=202)
 async def start_camera(camera_id: str, request: Request, db: AsyncSession = Depends(get_session),
                        who: Principal = Depends(operator)):
-    cam = await _get(db, camera_id)
+    cam = await _get(db, camera_id, who)
     if not any(a.enabled for a in cam.assignments):
         raise HTTPException(422, "assign at least one enabled model before starting (POST /cameras/{id}/models)")
     cam.desired_state = DesiredState.RUNNING
@@ -196,7 +220,7 @@ async def start_camera(camera_id: str, request: Request, db: AsyncSession = Depe
 @router.post("/{camera_id}/stop", response_model=CameraOut, status_code=202)
 async def stop_camera(camera_id: str, request: Request, db: AsyncSession = Depends(get_session),
                       who: Principal = Depends(operator)):
-    cam = await _get(db, camera_id)
+    cam = await _get(db, camera_id, who)
     cam.desired_state = DesiredState.STOPPED
     audit(db, request, who, "camera.stop", "camera", cam.id)
     await db.commit()
@@ -208,7 +232,7 @@ async def assign_models(camera_id: str, body: CameraModelsRequest, request: Requ
                         db: AsyncSession = Depends(get_session), who: Principal = Depends(operator)):
     """Replace the camera's model assignments. Only this camera's pipeline is rebuilt;
     other cameras (including the one sharing its worker) keep running."""
-    cam = await _get(db, camera_id)
+    cam = await _get(db, camera_id, who)
     strategy = body.execution_strategy or cam.execution_strategy
     if any(m.parent_model_id for m in body.models) and body.execution_strategy is None:
         strategy = ExecutionStrategy.CASCADE
@@ -254,24 +278,30 @@ async def assign_models(camera_id: str, body: CameraModelsRequest, request: Requ
 
 
 @router.get("/{camera_id}/stream")
-async def camera_stream(camera_id: str, db: AsyncSession = Depends(get_session), _: Principal = Depends(viewer),
-                        streams=Depends(get_streams)):
-    cam = await _get(db, camera_id)
+async def camera_stream(camera_id: str, db: AsyncSession = Depends(get_session), who: Principal = Depends(viewer),
+                        streams=Depends(get_streams), settings: Settings = Depends(get_settings)):
+    cam = await _get(db, camera_id, who)
+    from app.db.models import User
+    epoch = (await db.execute(select(User.token_epoch).where(User.username == who.subject))).scalar_one_or_none() or 0
     from app.db.models import StreamMode
     if cam.stream_mode == StreamMode.NONE:
         raise HTTPException(409, "streaming disabled for this camera (set stream_mode)")
     out = {"camera_id": cam.id, "stream_mode": cam.stream_mode.value, "streams": {}}
+    # short-lived token for THIS camera's video only (not valid for the API or any other camera); pass it to the player
+    # as "Authorization: Bearer <token>" (preferred) or "?jwt=<token>"
+    out["video_token"] = create_video_token(who.subject, cam.id, who.role, epoch, settings)
+    out["video_token_expires_in"] = settings.video_token_ttl_s
     if cam.stream_mode in (StreamMode.ANNOTATED, StreamMode.BOTH):
         out["streams"]["processed"] = streams.urls(cam.id, "processed")
-    if cam.stream_mode in (StreamMode.RAW, StreamMode.BOTH):
+    if cam.stream_mode in (StreamMode.RAW, StreamMode.BOTH) and streams.s.allow_raw_streams:
         out["streams"]["raw"] = streams.urls(cam.id, "raw")
     return out
 
 
 @router.get("/{camera_id}/stream/status")
-async def camera_stream_status(camera_id: str, db: AsyncSession = Depends(get_session), _: Principal = Depends(viewer),
+async def camera_stream_status(camera_id: str, db: AsyncSession = Depends(get_session), who: Principal = Depends(viewer),
                                streams=Depends(get_streams)):
-    cam = await _get(db, camera_id)
+    cam = await _get(db, camera_id, who)
     res = await streams.status(db, cam)
     await db.commit()
     return res

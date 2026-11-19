@@ -27,6 +27,7 @@ from sqlalchemy import and_, func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.bus.schemas import Envelope, PipelineCommandType, PipelineEventType, Topics
+from app.core.command_auth import sign_command
 from app.core.config import Settings
 from app.core.metrics import PIPE, SCHED
 from app.db.models import (
@@ -80,12 +81,19 @@ class Scheduler:
         self.source = source
         self.streams = stream_manager  # optional MediaMTX manager for RAW paths
         self._last_gpu_sample: dict[int, datetime] = {}
+        # only the scheduler process holds the signing key; the API asks it through the database instead
+        self.sends_commands = bool(settings.command_signing_key) or settings.allow_unsigned_commands
         self._worker_latency: dict[str, float] = {}
 
     # =========================================================== commands
     def _command(self, node_id: str, ctype: PipelineCommandType, payload: dict[str, Any]) -> str:
         env = Envelope(event_type=ctype.value, source=self.source, payload={"node_id": node_id, **payload})
-        self.bus.publish_reliable(Topics.PIPELINE_COMMANDS, env.model_dump(), key=node_id)
+        msg = env.model_dump()
+        if self.s.command_signing_key:
+            msg = sign_command(msg, self.s.command_signing_key, self.s.command_ttl_s)
+        elif not self.s.allow_unsigned_commands:
+            raise RuntimeError("COMMAND_SIGNING_KEY is not set: refusing to send an unsigned pipeline command")
+        self.bus.publish_reliable(Topics.PIPELINE_COMMANDS, msg, key=node_id)
         SCHED.commands.labels(ctype.value).inc()
         return env.event_id
 
@@ -199,6 +207,7 @@ class Scheduler:
             try:
                 await self._detect_failed_workers(db, stats)
                 await self._stop_requested(db, stats)
+                await self._restart_requested(db, stats)
                 await self._start_requested(db, stats)
                 await self._retire_empty_workers(db, stats)
                 await db.commit()
@@ -408,6 +417,30 @@ class Scheduler:
         w = await db.get(Worker, worker_id)
         if w is None:
             raise KeyError(worker_id)
+        if self.sends_commands:
+            return await self._restart_worker_now(db, w)
+        # This process (the API) has no signing key: record the request, the scheduler process carries it out.
+        n = (await db.execute(select(func.count()).select_from(WorkerCameraAssignment).where(and_(
+            WorkerCameraAssignment.worker_id == w.id, WorkerCameraAssignment.released_at.is_(None))))).scalar_one()
+        if not n:
+            raise ValueError("worker has no cameras; nothing to restart")
+        w.restart_requested_at = utcnow()
+        return w
+
+    async def _restart_requested(self, db: AsyncSession, stats) -> None:
+        """Carry out restarts that the API recorded (runs in the scheduler process, which signs the command)."""
+        if not self.sends_commands:
+            return
+        for w in (await db.execute(select(Worker).where(Worker.restart_requested_at.is_not(None)))).scalars():
+            w.restart_requested_at = None
+            if w.state in LIVE_WORKER_STATES:
+                try:
+                    await self._restart_worker_now(db, w)
+                    stats["workers_restarted"] += 1
+                except (ValueError, RoutingError) as e:
+                    log.warning("restart of %s not possible: %s", w.id, e)
+
+    async def _restart_worker_now(self, db: AsyncSession, w: Worker) -> Worker:
         rows = (await db.execute(select(WorkerCameraAssignment, Camera)
                                  .join(Camera, Camera.id == WorkerCameraAssignment.camera_id)
                                  .where(and_(WorkerCameraAssignment.worker_id == w.id,
@@ -435,9 +468,12 @@ class Scheduler:
         if w is None:
             raise KeyError(worker_id)
         w.desired_state = DesiredState.STOPPED
-        w.state = WorkerState.STOPPING
-        w.state_changed_at = utcnow()
-        self._command(w.node_id, PipelineCommandType.STOP_WORKER, {"worker_id": w.id, "reason": "api stop"})
+        if self.sends_commands:
+            w.state = WorkerState.STOPPING
+            w.state_changed_at = utcnow()
+            self._command(w.node_id, PipelineCommandType.STOP_WORKER, {"worker_id": w.id, "reason": "api stop"})
+        # else: the scheduler process sees desired_state=STOPPED on its next pass (within ~2 s) and sends the signed
+        # stop command itself (_retire_empty_workers)
         return w
 
     # =========================================================== event handling

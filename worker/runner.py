@@ -37,6 +37,11 @@ def main() -> int:
         spec = json.load(f)
     wid = spec["worker_id"]
     gen = spec.get("spec_generation", 1)
+    from app.core.pipeline_guard import check_spec
+    problems = check_spec(spec, s, allow_file=s.allow_file_sources or not s.kafka_enabled)  # file:// ok for benchmarks
+    if problems:
+        sys.stderr.write("refusing to start worker %s: %s\n" % (wid, "; ".join(problems)))
+        return 2
     # logs to stderr; stdout is reserved for the agent protocol
     configure_logging(f"worker:{wid}", s.log_level, s.log_json)
     logging.getLogger().handlers[0].stream = sys.stderr

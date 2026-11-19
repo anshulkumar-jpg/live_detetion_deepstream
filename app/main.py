@@ -39,7 +39,7 @@ def create_app(settings: Settings | None = None, bus=None, streams=None) -> Fast
     async def lifespan(app: FastAPI):
         configure_logging(s.service_name, s.log_level, s.log_json)
         if s.environment == "production":
-            s.validate_for_production()
+            s.validate_for_production(needs_publish_token=True, needs_mediamtx_api=True, needs_mediamtx_metrics=True)
         init_engine(s)
         await wait_for_db()
         async with get_sessionmaker()() as db:
@@ -58,6 +58,10 @@ def create_app(settings: Settings | None = None, bus=None, streams=None) -> Fast
         description="Control-plane API for the DeepStream multi-camera analytics platform. "
                     "Authenticate with POST /api/v1/auth/token and send `Authorization: Bearer <token>`.",
         lifespan=lifespan,
+        # the interactive API docs are for development; they are not served in production
+        docs_url=None if s.environment == "production" else "/docs",
+        redoc_url=None if s.environment == "production" else "/redoc",
+        openapi_url=None if s.environment == "production" else "/openapi.json",
     )
     # every request-scoped dependency sees the same settings object the app was built with
     app.dependency_overrides[get_settings] = lambda: s

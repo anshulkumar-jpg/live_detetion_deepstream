@@ -28,7 +28,7 @@ async def main() -> None:
     s = get_settings()
     configure_logging("scheduler", s.log_level, s.log_json)
     if s.environment == "production":
-        s.validate_for_production()
+        s.validate_for_production(needs_command_key=not s.allow_unsigned_commands, needs_mediamtx_api=True)
     start_http_server(int(os.environ.get("METRICS_PORT", "9101")))
     init_engine(s)
     await wait_for_db()
@@ -77,7 +77,22 @@ async def main() -> None:
             except asyncio.TimeoutError:
                 pass
 
+    async def retention_loop():
+        from app.services.retention import purge_expired
+        while not stop.is_set():
+            try:
+                async with get_sessionmaker()() as db:
+                    await purge_expired(db, s)
+            except Exception:
+                log.exception("retention pass failed (will retry)")
+            try:
+                await asyncio.wait_for(stop.wait(), timeout=3600)
+            except asyncio.TimeoutError:
+                pass
+
+    retention_task = asyncio.create_task(retention_loop())
     await reconcile_loop()
+    retention_task.cancel()
     consumer.stop()
     await asyncio.sleep(1.5)
     consumer_task.cancel()

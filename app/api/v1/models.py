@@ -9,6 +9,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import Principal, admin, audit, get_session, viewer
+from app.core.config import get_settings
+from app.core.pipeline_guard import check_stage
 from app.db.models import InferenceBackend, Model, ModelVersion, ModelVersionStatus
 from app.schemas.api import ModelCreate, ModelOut, ModelUpdate, ModelVersionIn, ModelVersionOut
 from app.services.scheduler import bump_cameras_for_model
@@ -33,6 +35,12 @@ def _out(m: Model) -> ModelOut:
 
 
 def _validate_version(m: Model, v: ModelVersionIn) -> None:
+    cfg = get_settings()
+    problems = check_stage({"model_id": m.id, "backend": m.backend.value, "nvinfer_properties": v.nvinfer_properties,
+                            "onnx_file": v.onnx_file, "engine_file": v.engine_file, "int8_calib_file": v.int8_calib_file,
+                            "nvinferserver_config_file": v.nvinferserver_config_file}, cfg.model_repository_dir, cfg.allowed_lib_dirs)
+    if problems:
+        raise HTTPException(422, "; ".join(problems))
     if m.backend == InferenceBackend.NVINFER and not (v.onnx_file or v.engine_file):
         raise HTTPException(422, "nvinfer models need onnx_file and/or engine_file")
     if m.backend == InferenceBackend.NVINFERSERVER and not v.nvinferserver_config_file:

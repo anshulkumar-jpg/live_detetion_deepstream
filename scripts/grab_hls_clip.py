@@ -2,16 +2,28 @@
 usage: python scripts/grab_hls_clip.py CAMERA_ID out.mp4 [--api https://localhost:8443] [--segments 4]
 Needs VMS_PASSWORD in the environment and ffmpeg on PATH.
 """
-import argparse, os, re, subprocess, sys, tempfile, time, urllib.parse
+import argparse
+import os
+import re
+import subprocess
+import sys
+import tempfile
+import time
 import httpx
+
+try:
+    from scripts._tls import tls_verify
+except ImportError:  # run as "python scripts/x.py"
+    from _tls import tls_verify
 
 ap = argparse.ArgumentParser()
 ap.add_argument("camera"); ap.add_argument("out")
 ap.add_argument("--api", default="https://localhost:8443"); ap.add_argument("--user", default="admin")
 ap.add_argument("--segments", type=int, default=4)
 a = ap.parse_args()
-c = httpx.Client(verify=False, timeout=120)
+c = httpx.Client(verify=tls_verify(), timeout=120)
 tok = c.post(f"{a.api}/api/v1/auth/token", json={"username": a.user, "password": os.environ["VMS_PASSWORD"]}).json()["access_token"]
+tok = c.get(f"{a.api}/api/v1/cameras/{a.camera}/stream", headers={"Authorization": f"Bearer {tok}"}).json()["video_token"]
 base = f"{a.api}/hls/cam/{a.camera}/processed/"
 def get(u): return c.get(u, params={"jwt": tok} if "jwt=" not in u else None)
 master = get(base + "index.m3u8").text

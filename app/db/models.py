@@ -119,6 +119,11 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     role: Mapped[str] = mapped_column(String(16), nullable=False, default="viewer")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # Every login token carries the epoch it was issued under. Raising it logs the user out everywhere at once
+    # (done on disable, role change, password change and by the admin "revoke tokens" action).
+    token_epoch: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    # Sites (tenants/locations) this user may see. Empty = all sites (single-tenant setups keep working unchanged).
+    sites: Mapped[list] = mapped_column(JsonType, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
@@ -130,6 +135,7 @@ class Camera(Base):
     username_enc: Mapped[str | None] = mapped_column(Text)
     password_enc: Mapped[str | None] = mapped_column(Text)
     location: Mapped[str | None] = mapped_column(String(255))
+    site: Mapped[str] = mapped_column(String(64), default="default", server_default="default", nullable=False, index=True)
     tags: Mapped[dict] = mapped_column(JsonType, default=dict)
     width: Mapped[int | None] = mapped_column(Integer)
     height: Mapped[int | None] = mapped_column(Integer)
@@ -313,6 +319,8 @@ class Worker(Base):
     pid: Mapped[int | None] = mapped_column(Integer)
     restart_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     spec_generation: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    # set by the API (which holds no signing key); the scheduler process sees it, sends the signed command, clears it
+    restart_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     last_heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     state_changed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=utcnow)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -452,6 +460,25 @@ class AuditLog(Base):
     request_id: Mapped[str | None] = mapped_column(String(64))
     client_ip: Mapped[str | None] = mapped_column(String(64))
     __table_args__ = (Index("ix_audit_ts", "ts"), Index("ix_audit_resource", "resource_type", "resource_id"))
+
+
+class RevokedToken(Base):
+    """A login token that was logged out. Rows are removed once the token would have expired anyway."""
+    __tablename__ = "revoked_tokens"
+    jti: Mapped[str] = mapped_column(String(64), primary_key=True)
+    username: Mapped[str] = mapped_column(String(64), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    revoked_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    __table_args__ = (Index("ix_revoked_exp", "expires_at"),)
+
+
+class LoginThrottle(Base):
+    """Failed sign-in counters, per user name ("u:<name>") and per client address ("ip:<address>")."""
+    __tablename__ = "login_throttle"
+    key: Mapped[str] = mapped_column(String(160), primary_key=True)
+    failures: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    window_started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ProcessedCommand(Base):

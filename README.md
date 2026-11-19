@@ -51,7 +51,7 @@ Client ──HTTPS──▶ Envoy GW ──▶ FastAPI (control plane) ──▶
 Prerequisites: NVIDIA driver, Docker, [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/), and NGC access for the DeepStream base image.
 
 ```bash
-cp .env.example .env               # fill every CHANGE_ME (commands to generate keys are in the file)
+python scripts/vms.py init         # creates .env, generates every secret, Kafka certificates and logins (any OS)
 mkdir -p models deploy/envoy/certs # put ONNX/engines/labels in ./models, TLS cert/key in deploy/envoy/certs
 docker compose build
 docker compose up -d                                  # core
@@ -89,10 +89,12 @@ export TEST_KAFKA_BOOTSTRAP=localhost:9092                                      
 pytest -q
 ```
 
+CI (`.github/workflows/ci.yml`) runs lint, these tests against PostgreSQL and Kafka, migrations, pip-audit and Trivy, image builds, compose/Envoy/Helm validation on every push.
+
 | Suite | What it does |
 |---|---|
-| Unit | Routing, config generation, admission control, event sampling/rate limiting, security, node agent (real subprocesses), MTMC |
-| Integration | Scheduler lifecycle/recovery, full API with 1,000 cameras, analytics on PostgreSQL, Kafka with DLQ, scheduler → agent end-to-end, Milvus (Lite) |
+| Unit | Signed commands, nvinfer allow-list, key rotation, CLI, routing, config generation, admission control, event sampling/rate limiting, security, node agent (real subprocesses), MTMC |
+| Integration | Token revocation, lockout, camera-scoped video tokens, site permissions, retention, scheduler lifecycle/recovery, full API with 1,000 cameras, analytics on PostgreSQL, Kafka with DLQ, scheduler → agent end-to-end, Milvus (Lite) |
 | GPU | `scripts/validate_gpu_node.py` and `scripts/benchmark.py`, run on the GPU server |
 
 See `docs/IMPLEMENTATION_REPORT.md` for what was verified and what still needs to be checked on the GPU server.
@@ -104,4 +106,6 @@ See `docs/IMPLEMENTATION_REPORT.md` for what was verified and what still needs t
 | `docs/IMPLEMENTATION_REPORT.md` | Phases, tests, open items |
 | `docs/API.md` and `docs/openapi.json` | API reference (live docs at `/docs`) |
 | `docs/DEPLOYMENT.md` | Compose, Kubernetes/Helm, security, operations |
+| `docs/SECRETS.md` | Where each secret is used and how to rotate it |
+| `docs/DATA_RETENTION.md` | Retention of detections, Re-ID and embeddings (GDPR / DPDP) |
 | `docs/BENCHMARK.md` | Capacity measurement procedure and results log |

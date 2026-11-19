@@ -30,7 +30,8 @@ def path_for(camera_id: str, kind: str) -> str:
 class MediaMTXClient:
     def __init__(self, settings: Settings, client: httpx.AsyncClient | None = None):
         self.s = settings
-        auth = (settings.mediamtx_api_user, settings.mediamtx_api_password) if settings.mediamtx_api_user else None
+        auth = (settings.mediamtx_api_user, settings.mediamtx_api_password) \
+            if settings.mediamtx_api_user and settings.mediamtx_api_password else None
         self.http = client or httpx.AsyncClient(base_url=settings.mediamtx_api_url, auth=auth, timeout=5.0)
 
     async def get_path(self, name: str) -> dict[str, Any] | None:
@@ -88,7 +89,15 @@ class StreamManager:
         }
 
     async def ensure_raw_path(self, cam: Camera) -> None:
-        """MediaMTX pulls the camera directly (credentials are only sent to MediaMTX)."""
+        """MediaMTX pulls the camera directly.
+
+        That puts the camera password into MediaMTX's path settings, so it is OFF unless ALLOW_RAW_STREAMS=true, and
+        the MediaMTX API that could read it back is protected by its own login (see internal.py).
+        """
+        if not self.s.allow_raw_streams:
+            log.warning("raw stream not configured: ALLOW_RAW_STREAMS is off, camera credentials stay out of MediaMTX",
+                        extra={"camera_id": cam.id})
+            return
         cipher = get_cipher(self.s)
         src = inject_credentials(cam.rtsp_url, cipher.decrypt(cam.username_enc), cipher.decrypt(cam.password_enc))
         try:
@@ -108,7 +117,7 @@ class StreamManager:
         kinds = []
         if cam.stream_mode in (StreamMode.ANNOTATED, StreamMode.BOTH):
             kinds.append("processed")
-        if cam.stream_mode in (StreamMode.RAW, StreamMode.BOTH):
+        if cam.stream_mode in (StreamMode.RAW, StreamMode.BOTH) and self.s.allow_raw_streams:
             kinds.append("raw")
         out: dict[str, Any] = {"camera_id": cam.id, "stream_mode": cam.stream_mode.value, "streams": []}
         for kind in kinds:
